@@ -1,0 +1,2298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<title>Hammady's Evening Run — SM All Saints</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    background: #080811;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    overflow: hidden;
+    font-family: 'Courier New', monospace;
+    touch-action: none;
+}
+#game-container {
+    position: relative;
+    box-shadow: 0 15px 40px rgba(0,0,0,0.9);
+    border: 2px solid #2a2845;
+    border-radius: 6px;
+    overflow: hidden;
+}
+canvas { display: block; image-rendering: pixelated; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+<div id="game-container"></div>
+<script>
+// ============================================================
+//  HAMMADY'S EVENING RUN — SM ALL SAINTS EDITION
+// ============================================================
+
+const GAME_W = 860;
+const GAME_H = 540;
+const WORLD_W = 6300;
+const WORLD_H = 920;
+const GRAVITY = 960;
+const PLAYER_SPEED = 210;
+const JUMP_FORCE = -430;
+
+// Web Audio API Retro Sound Synthesizer
+class SoundFX {
+    constructor() { this.ctx = null; }
+    init() {
+        if (!this.ctx) {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    }
+    playTone(freq, type, duration, endFreq = null, vol = 0.15) {
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            if (endFreq !== null) {
+                osc.frequency.exponentialRampToValueAtTime(Math.max(10, endFreq), this.ctx.currentTime + duration);
+            }
+            gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+    }
+    jump() { this.init(); this.playTone(180, 'sine', 0.16, 440, 0.15); }
+    punch() { this.init(); this.playTone(140, 'triangle', 0.1, 40, 0.25); }
+    hit() { this.init(); this.playTone(260, 'square', 0.12, 60, 0.2); }
+    parrySuccess() {
+        this.init();
+        this.playTone(880, 'sine', 0.35, null, 0.3);
+        setTimeout(() => this.playTone(1320, 'triangle', 0.4, null, 0.25), 60);
+        setTimeout(() => this.playTone(1760, 'sine', 0.5, null, 0.2), 120);
+    }
+    dodge() { this.init(); this.playTone(280, 'sine', 0.15, 90, 0.12); }
+    warningRed() { this.init(); this.playTone(220, 'sawtooth', 0.14, 110, 0.15); }
+    warningWhite() { this.init(); this.playTone(660, 'triangle', 0.15, 880, 0.15); }
+    rulerSmack() { this.init(); this.playTone(180, 'square', 0.25, 40, 0.3); }
+    dashWhoosh() { this.init(); this.playTone(120, 'sawtooth', 0.3, 300, 0.2); }
+    chalkThrow() { this.init(); this.playTone(400, 'sine', 0.2, 150, 0.08); }
+}
+const sfx = new SoundFX();
+
+// Banter lines after defeating Showers
+const BANTER = [
+    "The light heavyweight champ taught me that.",
+    "Not as painful as Delson.",
+    "My aura remains 100% dry and intact!",
+    "Soap and water can't wash away this aura.",
+    "You tried to make me smell clean? Never.",
+    "Aura points: +10,000. Showers taken: ZERO."
+];
+let banterIdx = 0;
+
+// ============================================================
+//  BOOT SCENE — HIGH-DETAIL 2D PIXEL ART ENGINE
+// ============================================================
+class BootScene extends Phaser.Scene {
+    constructor() { super('Boot'); }
+
+    create() {
+        this.generateAllTextures();
+        this.scene.start('Title');
+    }
+
+    generateAllTextures() {
+        let g = this.make.graphics({ add: false });
+        this.drawRealisticHammadyIdle(g);
+        g.generateTexture('player_idle', 48, 64);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawRealisticHammadyPunch(g);
+        g.generateTexture('player_punch', 58, 64);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawRealisticHammadyParry(g);
+        g.generateTexture('player_parry', 48, 64);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawDetailedShower(g, 'normal');
+        g.generateTexture('shower_idle', 44, 52);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawDetailedShower(g, 'red');
+        g.generateTexture('shower_red', 46, 54);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawDetailedShower(g, 'white');
+        g.generateTexture('shower_white', 46, 54);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawDetailedHanis(g);
+        g.generateTexture('boss_idle', 46, 64);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0xddb872);
+        g.fillRoundedRect(0, 0, 26, 170, 4);
+        g.lineStyle(2, 0x8d5b24);
+        g.strokeRoundedRect(0, 0, 26, 170, 4);
+        g.fillStyle(0x3e2723);
+        for (let y = 10; y < 160; y += 8) {
+            const tickW = (y % 24 === 0) ? 14 : 7;
+            g.fillRect(2, y, tickW, 2);
+        }
+        g.fillCircle(13, 14, 4);
+        g.generateTexture('giant_ruler', 26, 170);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0xffffff, 1);
+        g.fillRoundedRect(0, 0, 16, 7, 3);
+        g.fillStyle(0xdddddd, 1);
+        g.fillRect(3, 1, 10, 2);
+        g.generateTexture('chalk', 16, 7);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0x7bc6fe, 0.75);
+        g.fillRect(0, 0, 2, 9);
+        g.generateTexture('raindrop', 2, 9);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0xa23e2a);
+        g.fillRect(0, 0, 32, 16);
+        g.fillStyle(0x7b2a1a);
+        g.fillRect(0, 14, 32, 2);
+        g.fillRect(15, 0, 2, 16);
+        g.generateTexture('roof_tile', 32, 16);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0x3a405a);
+        g.fillRect(0, 0, 10, 160);
+        g.fillStyle(0x565f83);
+        g.fillRect(2, 0, 4, 160);
+        g.generateTexture('pillar', 10, 160);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0x4a2e1b);
+        g.fillRect(0, 0, 84, 130);
+        const bookCols = [0xb22222, 0x1e88e5, 0x43a047, 0xfbc02d, 0x8e24aa, 0xd81b60, 0x00acc1];
+        for (let row = 0; row < 3; row++) {
+            const sy = 12 + row * 38;
+            g.fillStyle(0x2e1a0d);
+            g.fillRect(4, sy + 30, 76, 4);
+            let bx = 6;
+            while (bx < 74) {
+                const bw = Phaser.Math.Between(5, 9);
+                const bh = Phaser.Math.Between(18, 26);
+                const c = bookCols[Phaser.Math.Between(0, bookCols.length - 1)];
+                g.fillStyle(c);
+                g.fillRect(bx, sy + 30 - bh, bw, bh);
+                bx += bw + 1;
+            }
+        }
+        g.generateTexture('bookshelf', 84, 130);
+        g.destroy();
+    }
+
+    drawRealisticHammadyIdle(g) {
+        g.fillStyle(0x11121a);
+        g.fillRect(16, 8, 16, 12);
+        g.fillRect(14, 11, 20, 6);
+        g.fillStyle(0x232535);
+        g.fillRect(17, 6, 4, 3);
+        g.fillRect(22, 5, 5, 4);
+        g.fillRect(28, 7, 4, 3);
+        g.fillStyle(0x3a3e56);
+        g.fillRect(19, 7, 3, 2);
+        g.fillRect(24, 6, 3, 2);
+
+        g.fillStyle(0xf7be8b);
+        g.fillRect(18, 13, 12, 10);
+        g.fillStyle(0xfce0c8);
+        g.fillRect(19, 14, 10, 4);
+        g.fillStyle(0xde8d54);
+        g.fillRect(19, 21, 10, 2);
+        g.fillRect(21, 22, 6, 2);
+
+        g.fillStyle(0x11121a);
+        g.fillRect(18, 11, 3, 4);
+        g.fillRect(23, 11, 2, 4);
+        g.fillRect(27, 11, 3, 3);
+        g.fillRect(16, 14, 2, 5);
+        g.fillRect(30, 14, 2, 5);
+        g.fillStyle(0xde8d54);
+        g.fillRect(16, 16, 2, 3);
+        g.fillRect(30, 16, 2, 3);
+
+        g.fillStyle(0x11121a);
+        g.fillRect(19, 14, 4, 1);
+        g.fillRect(25, 14, 4, 1);
+        g.fillStyle(0xffffff);
+        g.fillRect(20, 16, 3, 2);
+        g.fillRect(26, 16, 3, 2);
+        g.fillStyle(0x11121a);
+        g.fillRect(21, 16, 2, 2);
+        g.fillRect(27, 16, 2, 2);
+        g.fillStyle(0xb4612d);
+        g.fillRect(24, 18, 1, 1);
+        g.fillStyle(0x994d22);
+        g.fillRect(22, 20, 4, 1);
+
+        g.fillStyle(0xb4612d);
+        g.fillRect(22, 23, 4, 3);
+        g.fillStyle(0xde8d54);
+        g.fillRect(21, 24, 6, 2);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(16, 26, 16, 16);
+        g.fillStyle(0xffffff);
+        g.fillRect(17, 27, 6, 12);
+        g.fillRect(25, 27, 6, 12);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(16, 32, 2, 10);
+        g.fillRect(30, 32, 2, 10);
+        g.fillRect(18, 39, 12, 3);
+        g.fillStyle(0x94a3b8);
+        g.fillRect(19, 41, 10, 1);
+
+        g.fillStyle(0xffffff);
+        g.fillRect(19, 26, 3, 3);
+        g.fillRect(26, 26, 3, 3);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(18, 28, 2, 2);
+        g.fillRect(28, 28, 2, 2);
+
+        g.fillStyle(0x1e293b);
+        g.fillRect(23, 27, 3, 3);
+        g.fillRect(23, 30, 3, 8);
+        g.fillStyle(0x334155);
+        g.fillRect(24, 30, 1, 7);
+
+        g.fillStyle(0xd32f2f);
+        g.fillRect(18, 31, 3, 4);
+        g.fillStyle(0xfbc02d);
+        g.fillRect(19, 32, 1, 2);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(13, 27, 3, 6);
+        g.fillRect(32, 27, 3, 6);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(13, 32, 3, 1);
+        g.fillRect(32, 32, 3, 1);
+
+        g.fillStyle(0xf7be8b);
+        g.fillRect(12, 33, 4, 7);
+        g.fillRect(32, 33, 4, 7);
+        g.fillStyle(0xde8d54);
+        g.fillRect(12, 36, 1, 4);
+        g.fillRect(35, 36, 1, 4);
+
+        g.fillStyle(0xffffff);
+        g.fillRect(11, 40, 5, 7);
+        g.fillRect(32, 40, 5, 7);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(11, 42, 5, 1);
+        g.fillRect(11, 45, 5, 1);
+        g.fillRect(32, 42, 5, 1);
+        g.fillRect(32, 45, 5, 1);
+        g.fillStyle(0x1976d2);
+        g.fillRect(11, 41, 5, 1);
+        g.fillRect(32, 41, 5, 1);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(16, 42, 16, 3);
+        g.fillStyle(0xe2e8f0);
+        g.fillRect(23, 42, 3, 3);
+
+        g.fillStyle(0x28362d);
+        g.fillRect(16, 45, 7, 13);
+        g.fillRect(25, 45, 7, 13);
+        g.fillStyle(0x3d5246);
+        g.fillRect(18, 46, 3, 9);
+        g.fillRect(27, 46, 3, 9);
+        g.fillStyle(0x16201b);
+        g.fillRect(23, 45, 2, 13);
+        g.fillRect(16, 52, 7, 1);
+        g.fillRect(25, 52, 7, 1);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(14, 58, 9, 3);
+        g.fillRect(25, 58, 9, 3);
+        g.fillStyle(0xffffff);
+        g.fillRect(17, 59, 2, 1);
+        g.fillRect(28, 59, 2, 1);
+        g.fillRect(13, 61, 10, 2);
+        g.fillRect(25, 61, 10, 2);
+    }
+
+    drawRealisticHammadyPunch(g) {
+        g.fillStyle(0x11121a);
+        g.fillRect(20, 8, 16, 12);
+        g.fillStyle(0x232535);
+        g.fillRect(22, 6, 6, 4);
+        g.fillRect(27, 7, 4, 3);
+
+        g.fillStyle(0xf7be8b);
+        g.fillRect(22, 13, 13, 10);
+        g.fillStyle(0xfce0c8);
+        g.fillRect(24, 14, 10, 4);
+        g.fillStyle(0xde8d54);
+        g.fillRect(24, 21, 10, 2);
+
+        g.fillStyle(0x11121a);
+        g.fillRect(23, 13, 5, 2);
+        g.fillRect(30, 13, 5, 2);
+        g.fillStyle(0xffffff);
+        g.fillRect(24, 15, 3, 2);
+        g.fillRect(31, 15, 3, 2);
+        g.fillStyle(0x11121a);
+        g.fillRect(26, 15, 2, 2);
+        g.fillRect(33, 15, 2, 2);
+
+        g.fillStyle(0xffffff);
+        g.fillRect(27, 20, 5, 2);
+        g.fillStyle(0x11121a);
+        g.fillRect(27, 20, 5, 1);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(18, 25, 18, 17);
+        g.fillStyle(0xffffff);
+        g.fillRect(20, 26, 12, 12);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(18, 33, 3, 9);
+        g.fillRect(20, 39, 15, 3);
+
+        g.fillStyle(0x1e293b);
+        g.fillRect(26, 26, 3, 3);
+        g.fillRect(25, 29, 3, 9);
+        g.fillStyle(0x334155);
+        g.fillRect(25, 30, 1, 7);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(13, 27, 5, 5);
+        g.fillStyle(0xf7be8b);
+        g.fillRect(11, 31, 5, 6);
+        g.fillStyle(0xffffff);
+        g.fillRect(10, 36, 6, 6);
+        g.fillStyle(0x1976d2);
+        g.fillRect(10, 37, 6, 1);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(35, 25, 6, 6);
+        g.fillStyle(0xf7be8b);
+        g.fillRect(40, 26, 8, 6);
+        g.fillStyle(0xde8d54);
+        g.fillRect(40, 30, 8, 2);
+        g.fillStyle(0xffffff);
+        g.fillRect(47, 24, 9, 9);
+        g.fillStyle(0xcbd5e1);
+        g.fillRect(47, 26, 9, 2);
+        g.fillRect(47, 30, 9, 2);
+        g.fillStyle(0x1976d2);
+        g.fillRect(48, 25, 2, 7);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(18, 42, 18, 3);
+        g.fillStyle(0xe2e8f0);
+        g.fillRect(26, 42, 3, 3);
+
+        g.fillStyle(0x28362d);
+        g.fillRect(15, 45, 8, 13);
+        g.fillRect(28, 45, 9, 13);
+        g.fillStyle(0x3d5246);
+        g.fillRect(29, 46, 5, 8);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(12, 58, 10, 3);
+        g.fillRect(29, 58, 11, 3);
+        g.fillStyle(0xffffff);
+        g.fillRect(11, 61, 11, 2);
+        g.fillRect(29, 61, 12, 2);
+    }
+
+    drawRealisticHammadyParry(g) {
+        g.fillStyle(0x11121a);
+        g.fillRect(16, 7, 16, 12);
+        g.fillStyle(0x232535);
+        g.fillRect(18, 5, 6, 3);
+
+        g.fillStyle(0xf7be8b);
+        g.fillRect(18, 12, 12, 10);
+        g.fillStyle(0xffffff);
+        g.fillRect(20, 14, 3, 2);
+        g.fillRect(26, 14, 3, 2);
+        g.fillStyle(0x11121a);
+        g.fillRect(21, 14, 2, 2);
+        g.fillRect(27, 14, 2, 2);
+
+        g.fillStyle(0xedf2f7);
+        g.fillRect(16, 25, 16, 17);
+        g.fillStyle(0x1e293b);
+        g.fillRect(23, 29, 3, 9);
+
+        g.fillStyle(0xf7be8b);
+        g.fillRect(17, 21, 6, 10);
+        g.fillRect(25, 21, 6, 10);
+        g.fillStyle(0xffffff);
+        g.fillRect(16, 17, 7, 7);
+        g.fillRect(25, 17, 7, 7);
+        g.fillStyle(0x1976d2);
+        g.fillRect(16, 19, 7, 1);
+        g.fillRect(25, 19, 7, 1);
+
+        g.fillStyle(0xffea00, 0.45);
+        g.fillCircle(24, 23, 14);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(16, 42, 16, 3);
+        g.fillStyle(0x28362d);
+        g.fillRect(14, 45, 8, 13);
+        g.fillRect(26, 45, 8, 13);
+        g.fillStyle(0x3d5246);
+        g.fillRect(15, 46, 4, 8);
+        g.fillRect(27, 46, 4, 8);
+
+        g.fillStyle(0x18181b);
+        g.fillRect(12, 58, 10, 3);
+        g.fillRect(26, 58, 10, 3);
+        g.fillStyle(0xffffff);
+        g.fillRect(11, 61, 11, 2);
+        g.fillRect(26, 61, 11, 2);
+    }
+
+    drawDetailedShower(g, mode) {
+        const isRed = mode === 'red';
+        const isWhite = mode === 'white';
+
+        let cCore = 0x29b6f6;
+        let cDark = 0x0288d1;
+        let cGlow = 0x81d4fa;
+
+        if (isRed) {
+            cCore = 0xf44336;
+            cDark = 0xb71c1c;
+            cGlow = 0xff8a80;
+        } else if (isWhite) {
+            cCore = 0xffffff;
+            cDark = 0xb0bec5;
+            cGlow = 0xfff59d;
+        }
+
+        g.fillStyle(cGlow, isRed || isWhite ? 0.4 : 0.2);
+        g.fillCircle(22, 18, 20);
+
+        g.fillStyle(cCore, 0.95);
+        g.fillCircle(22, 16, 14);
+        g.fillCircle(13, 20, 10);
+        g.fillCircle(31, 20, 10);
+        g.fillCircle(22, 24, 11);
+
+        g.fillStyle(cDark, 0.85);
+        g.fillCircle(22, 26, 9);
+        g.fillCircle(14, 23, 7);
+        g.fillCircle(30, 23, 7);
+
+        g.fillStyle(isRed ? 0xffff00 : (isWhite ? 0x00e5ff : 0xff1744));
+        g.fillRect(16, 16, 4, 2);
+        g.fillRect(25, 16, 4, 2);
+
+        g.fillStyle(cCore, 0.9);
+        g.fillRect(12, 30, 3, 11);
+        g.fillRect(19, 32, 3, 16);
+        g.fillRect(26, 31, 3, 13);
+        g.fillRect(31, 30, 2, 8);
+    }
+
+    drawDetailedHanis(g) {
+        g.fillStyle(0x13131c);
+        g.fillRect(14, 7, 18, 12);
+        g.fillRect(31, 10, 10, 16);
+        g.fillStyle(0x242435);
+        g.fillRect(16, 5, 8, 4);
+        g.fillStyle(0xd50000);
+        g.fillRect(30, 9, 4, 4);
+
+        g.fillStyle(0xfde2cd);
+        g.fillRect(16, 12, 15, 12);
+        g.fillStyle(0xf4bda0);
+        g.fillRect(18, 21, 11, 3);
+
+        g.fillStyle(0xd50000);
+        g.fillRect(18, 15, 5, 4);
+        g.fillRect(25, 15, 5, 4);
+        g.fillRect(23, 16, 2, 1);
+        g.fillStyle(0xffffff);
+        g.fillRect(19, 16, 3, 2);
+        g.fillRect(26, 16, 3, 2);
+        g.fillStyle(0xd50000);
+        g.fillRect(20, 16, 2, 2);
+        g.fillRect(27, 16, 2, 2);
+
+        g.fillStyle(0x1a237e);
+        g.fillRect(14, 25, 20, 18);
+        g.fillStyle(0x283593);
+        g.fillRect(15, 26, 5, 16);
+        g.fillRect(28, 26, 5, 16);
+
+        g.fillStyle(0xffffff);
+        g.fillRect(22, 25, 4, 8);
+        g.fillStyle(0xffd700);
+        g.fillRect(17, 28, 4, 3);
+
+        g.fillStyle(0x0d1442);
+        g.fillRect(13, 43, 22, 11);
+        g.fillStyle(0x152163);
+        for (let x = 15; x < 33; x += 4) {
+            g.fillRect(x, 43, 2, 11);
+        }
+
+        g.fillStyle(0xffffff);
+        g.fillRect(16, 54, 5, 5);
+        g.fillRect(27, 54, 5, 5);
+        g.fillStyle(0x111111);
+        g.fillRect(15, 59, 7, 3);
+        g.fillRect(26, 59, 7, 3);
+    }
+}
+
+// ============================================================
+//  TITLE SCENE
+// ============================================================
+class TitleScene extends Phaser.Scene {
+    constructor() { super('Title'); }
+
+    create() {
+        const cx = GAME_W / 2, cy = GAME_H / 2;
+
+        const sky = this.add.graphics();
+        for (let y = 0; y < GAME_H; y++) {
+            const t = y / GAME_H;
+            const r = Phaser.Math.Linear(30, 12, t);
+            const g = Phaser.Math.Linear(20, 8, t);
+            const b = Phaser.Math.Linear(50, 22, t);
+            sky.fillStyle(Phaser.Display.Color.GetColor(r, g, b));
+            sky.fillRect(0, y, GAME_W, 1);
+        }
+
+        for (let i = 0; i < 70; i++) {
+            const rx = Phaser.Math.Between(0, GAME_W);
+            const ry = Phaser.Math.Between(0, GAME_H);
+            const drop = this.add.image(rx, ry, 'raindrop').setAlpha(0.35);
+            this.tweens.add({
+                targets: drop, y: GAME_H + 20,
+                duration: Phaser.Math.Between(550, 900),
+                repeat: -1, delay: Phaser.Math.Between(0, 600)
+            });
+        }
+
+        const banner = this.add.graphics();
+        banner.fillStyle(0x0e0e1a, 0.9);
+        banner.fillRoundedRect(cx - 290, cy - 170, 580, 340, 12);
+        banner.lineStyle(3, 0xf5c542, 0.9);
+        banner.strokeRoundedRect(cx - 290, cy - 170, 580, 340, 12);
+
+        this.add.text(cx, cy - 115, "HAMMADY'S\nEVENING RUN", {
+            fontSize: '36px', fontFamily: 'monospace', color: '#f5c542',
+            fontStyle: 'bold', align: 'center', stroke: '#000', strokeThickness: 6
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy - 35, '📍 SM ALL SAINTS, KOTA KINABALU', {
+            fontSize: '15px', fontFamily: 'monospace', color: '#4fc3f7',
+            fontStyle: 'bold', align: 'center'
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy + 10,
+            'Mission: Climb to the 2nd Floor Library & retrieve your Casio fx-570\n' +
+            'Watch out for the Showers (protect your aura!) and Hanis (your ex)!', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#dddddd',
+            align: 'center', lineSpacing: 4
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy + 65,
+            '🔴 RED FLASH = DODGE / ROLL (Avoid heavy attacks!)\n' +
+            '⚪ WHITE FLASH = PARRY (Press X to Stun & Counter 3x Damage!)', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffb74d',
+            align: 'center', lineSpacing: 3
+        }).setOrigin(0.5);
+
+        const start = this.add.text(cx, cy + 125, '▶ PRESS ANY KEY / TAP TO START ◀', {
+            fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#d84315', padding: { x: 12, y: 6 }
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: start, alpha: 0.4, duration: 500, yoyo: true, repeat: -1
+        });
+
+        const startAction = () => {
+            sfx.init();
+            this.scene.start('Game');
+        };
+        this.input.keyboard.on('keydown', startAction);
+        this.input.on('pointerdown', startAction);
+    }
+}
+
+// ============================================================
+//  MAIN GAME SCENE
+// ============================================================
+class GameScene extends Phaser.Scene {
+    constructor() { super('Game'); }
+
+    init(data) {
+        this.spawnCheckpoint = (data && data.checkpoint) ? data.checkpoint : 'start';
+        // FULL STATE RESET — Ensures respawn starts with a 100% clean state!
+        this.cameras.main.resetFX();
+        this.dialogBox = null;
+        this.dialogText = null;
+        this.dialogSpeaker = null;
+        this.dialogPrompt = null;
+        this.dialogQueue = [];
+        this.dialogCallback = null;
+        this.inCutscene = false;
+        this.firstShowerSeen = (this.spawnCheckpoint === 'library');
+        this.bossTriggered = false;
+        this.bossDefeated = false;
+        this.isBossDashing = false;
+        this.activeRuler = null;
+        this.activeAoeZones = [];
+        if (this.showerProjectiles) this.showerProjectiles.clear(true, true);
+        if (this.bossProjectiles) this.bossProjectiles.clear(true, true);
+        this.playerAlive = true;
+        this.playerHP = 100;
+        this.maxHP = 100;
+        this.isPunching = false;
+        this.punchCooldown = 0;
+        this.parryCooldown = 0;
+        this.isParrying = false;
+        this.isDodging = false;
+        this.dodgeTimer = 0;
+        this.invincibleTimer = 0;
+        this.stunTimer = 0;
+        this.comboCount = 0;
+        this.lastPunchTime = 0;
+        this.canDoubleJump = true;
+        this.touchState = { left: false, right: false, jump: false, punch: false, parry: false };
+    }
+
+    create() {
+        this.mapWidth = WORLD_W;
+        this.mapHeight = WORLD_H;
+
+        this.cameras.main.resetFX();
+        this.cameras.main.fadeIn(400, 0, 0, 0);
+
+        this.physics.world.setBounds(0, 0, this.mapWidth, this.mapHeight);
+        this.cameras.main.setBounds(0, 0, this.mapWidth, this.mapHeight);
+
+        this.createSkyAndBackdrop();
+
+        this.platforms = this.physics.add.staticGroup();
+        this.buildVerticalSchoolMap();
+
+        this.rainParticles = this.add.particles(0, 0, 'raindrop', {
+            x: { min: 0, max: this.mapWidth },
+            y: -10,
+            lifespan: 1400,
+            speedY: { min: 400, max: 620 },
+            speedX: { min: -40, max: -80 },
+            alpha: { start: 0.6, end: 0.2 },
+            quantity: 5,
+            frequency: 30
+        });
+
+        const groundY = this.mapHeight - 35;
+        let startX = 120;
+        let startY = groundY - 50;
+        if (this.spawnCheckpoint === 'library') {
+            startX = 4650;
+            startY = 240;
+        }
+
+        this.player = this.physics.add.sprite(startX, startY, 'player_idle');
+        this.player.setCollideWorldBounds(true);
+        this.player.body.setSize(24, 54);
+        this.player.body.setOffset(12, 8);
+        this.physics.add.collider(this.player, this.platforms);
+        this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
+
+        this.enemies = this.physics.add.group();
+        this.physics.add.collider(this.enemies, this.platforms);
+        this.spawnShowers();
+
+        this.bossProjectiles = this.physics.add.group();
+        this.physics.add.collider(this.bossProjectiles, this.platforms, (p) => p.destroy());
+
+        this.showerProjectiles = this.physics.add.group();
+        this.physics.add.collider(this.showerProjectiles, this.platforms, (p) => p.destroy());
+
+        this.physics.add.overlap(this.player, this.enemies, this.handleEnemyContact, null, this);
+        this.physics.add.overlap(this.player, this.bossProjectiles, this.handleChalkHit, null, this);
+        this.physics.add.overlap(this.player, this.showerProjectiles, this.handleShowerProjectileHit, null, this);
+
+        this.createHUD();
+        this.createTouchControls();
+
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.wasd = this.input.keyboard.addKeys('W,A,S,D');
+        this.punchKey = this.input.keyboard.addKey('Z');
+        this.punchKey2 = this.input.keyboard.addKey('O');
+        this.parryKey = this.input.keyboard.addKey('X');
+        this.parryKey2 = this.input.keyboard.addKey('P');
+        this.spaceKey = this.input.keyboard.addKey('SPACE');
+
+        if (this.spawnCheckpoint !== 'library') {
+            this.time.delayedCall(400, () => this.startOpeningCutscene());
+        }
+    }
+
+    createSkyAndBackdrop() {
+        const bg = this.add.graphics();
+        for (let y = 0; y < this.mapHeight; y++) {
+            const t = y / this.mapHeight;
+            const r = Math.floor(Phaser.Math.Linear(24, 10, t));
+            const g = Math.floor(Phaser.Math.Linear(18, 8, t));
+            const b = Math.floor(Phaser.Math.Linear(44, 18, t));
+            bg.fillStyle(Phaser.Display.Color.GetColor(r, g, b));
+            bg.fillRect(0, y, this.mapWidth, 1);
+        }
+
+        bg.fillStyle(0x0e131c, 0.75);
+        for (let x = 0; x < this.mapWidth; x += 220) {
+            bg.fillCircle(x, this.mapHeight - 160, 180);
+        }
+    }
+
+    buildVerticalSchoolMap() {
+        const p = this.platforms;
+        const g = this.add.graphics();
+        const groundY = this.mapHeight - 35;
+
+        const groundSegs = [
+            [0, 1900],
+            [1950, 3250],
+            [3250, 4400],
+        ];
+        groundSegs.forEach(([x1, x2]) => {
+            const w = x2 - x1;
+            const seg = this.add.graphics();
+            seg.fillStyle(0x353b48);
+            seg.fillRect(0, 0, w, 50);
+            seg.fillStyle(0x718093);
+            seg.fillRect(0, 0, w, 4);
+            seg.fillStyle(0x272c35);
+            for (let tx = 0; tx < w; tx += 60) seg.fillRect(tx, 0, 2, 50);
+            seg.generateTexture(`ground_${x1}`, w, 50);
+            seg.destroy();
+
+            const plat = p.create(x1 + w / 2, groundY, `ground_${x1}`);
+            plat.refreshBody();
+        });
+
+        // 1. PINTU GERBANG
+        g.fillStyle(0x8a2d1d);
+        g.fillRect(30, groundY - 170, 24, 150);
+        g.fillRect(220, groundY - 170, 24, 150);
+        g.fillStyle(0x6e2216);
+        g.fillRect(20, groundY - 185, 234, 20);
+        g.fillStyle(0xa23e2a);
+        g.fillTriangle(15, groundY - 185, 137, groundY - 215, 259, groundY - 185);
+
+        this.add.text(137, groundY - 170, 'SM ALL SAINTS KOTA KINABALU\nEST. 1903', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffea00',
+            fontStyle: 'bold', align: 'center', stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5);
+
+        // 2. DEWAN ALL SAINTS & WALKWAY
+        const dewanX = 950;
+        g.fillStyle(0x2c3e50);
+        g.fillRect(dewanX, groundY - 290, 520, 270);
+        g.fillStyle(0xa23e2a);
+        g.fillTriangle(dewanX - 20, groundY - 290, dewanX + 260, groundY - 360, dewanX + 540, groundY - 290);
+
+        g.fillStyle(0xffe082, 0.7);
+        for (let wx = dewanX + 40; wx < dewanX + 480; wx += 80) {
+            g.fillRect(wx, groundY - 240, 44, 90);
+            g.fillCircle(wx + 22, groundY - 240, 22);
+            g.fillStyle(0x1a252f);
+            g.fillRect(wx + 20, groundY - 260, 4, 110);
+            g.fillRect(wx, groundY - 195, 44, 4);
+            g.fillStyle(0xffe082, 0.7);
+        }
+
+        g.fillStyle(0x4e342e);
+        g.fillRect(dewanX + 220, groundY - 110, 80, 90);
+        this.add.text(dewanX + 260, groundY - 280, '🏛️ DEWAN ALL SAINTS', {
+            fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
+            fontStyle: 'bold', backgroundColor: '#8a2d1d', padding: { x: 8, y: 3 }
+        }).setOrigin(0.5);
+
+        for (let px = 800; px < 1900; px += 140) {
+            this.add.image(px, groundY - 150, 'pillar').setOrigin(0, 0);
+            this.add.tileSprite(px + 70, groundY - 165, 150, 24, 'roof_tile').setOrigin(0.5, 0);
+        }
+        // (Walkway bypass platforms removed: you must face the enemies on foot!)
+
+        // 3. CLASSROOM BLOCKS
+        const classX = 1950;
+        g.fillStyle(0x34495e);
+        g.fillRect(classX, groundY - 310, 1250, 290);
+        g.fillStyle(0xa23e2a);
+        g.fillRect(classX - 10, groundY - 325, 1270, 20);
+
+        for (let cx = classX + 50; cx < classX + 1150; cx += 160) {
+            g.fillStyle(0xfff59d, 0.7);
+            g.fillRect(cx, groundY - 280, 85, 55);
+            g.fillRect(cx, groundY - 180, 85, 55);
+            g.fillStyle(0x2c3e50);
+            for (let ly = 0; ly < 55; ly += 11) {
+                g.fillRect(cx, groundY - 280 + ly, 85, 2);
+                g.fillRect(cx, groundY - 180 + ly, 85, 2);
+            }
+            g.fillStyle(0x5d4037);
+            g.fillRect(cx + 95, groundY - 190, 36, 65);
+        }
+
+        this.add.text(classX + 140, groundY - 300, '🏫 5 STEM 1', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffea00',
+            backgroundColor: '#1a252f', padding: { x: 4, y: 2 }
+        });
+        this.add.text(classX + 460, groundY - 300, '🏫 5 ALL SAINTS', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffea00',
+            backgroundColor: '#1a252f', padding: { x: 4, y: 2 }
+        });
+        this.add.text(classX + 780, groundY - 300, '🏫 5 SAINS', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffea00',
+            backgroundColor: '#1a252f', padding: { x: 4, y: 2 }
+        });
+
+        for (let cx = classX; cx < classX + 1250; cx += 140) {
+            this.add.image(cx, groundY - 150, 'pillar').setOrigin(0, 0);
+            this.add.tileSprite(cx + 70, groundY - 165, 150, 24, 'roof_tile').setOrigin(0.5, 0);
+        }
+        // (Classroom bypass platforms removed: fight through to the stairs!)
+
+        // 4. VERTICAL STAIRWELL TOWER
+        const stairX = 3250;
+        g.fillStyle(0x232936);
+        g.fillRect(stairX, 220, 1150, groundY - 200);
+
+        g.fillStyle(0x151922);
+        for (let sx = stairX + 50; sx < stairX + 1100; sx += 90) {
+            for (let sy = 260; sy < groundY - 50; sy += 50) {
+                g.fillRect(sx, sy, 40, 20);
+            }
+        }
+
+        this.add.text(stairX + 500, 240, '⬆️ TANGGA BLOK UTAMA (CLIMB TO 2ND FLOOR LIBRARY)', {
+            fontSize: '15px', fontFamily: 'monospace', color: '#ffcc00',
+            fontStyle: 'bold', backgroundColor: '#111118', padding: { x: 8, y: 4 }
+        }).setOrigin(0.5);
+
+        const stairSteps = [
+            [3350, groundY - 80, 110],
+            [3480, groundY - 160, 100],
+            [3610, groundY - 240, 100],
+            [3740, groundY - 320, 105],
+            [3880, groundY - 400, 110],
+            [4020, groundY - 480, 110],
+            [4160, groundY - 550, 110],
+            [4300, 310, 130],
+        ];
+
+        stairSteps.forEach(([px, py, pw]) => {
+            this.createCustomPlat(px, py, pw);
+            const rail = this.add.graphics();
+            rail.fillStyle(0xffeb3b, 0.85);
+            rail.fillRect(px, py - 18, pw, 3);
+            rail.fillRect(px + 4, py - 18, 3, 18);
+            rail.fillRect(px + pw - 7, py - 18, 3, 18);
+        });
+
+        // 5. 2ND FLOOR LIBRARY
+        const libX = 4420;
+        const libFloorY = 310;
+        const libWidth = WORLD_W - libX;
+
+        g.fillStyle(0x181e28);
+        for (let cx = libX + 80; cx < WORLD_W; cx += 220) {
+            g.fillRect(cx, libFloorY + 20, 28, this.mapHeight - libFloorY);
+        }
+
+        const libFloorSeg = this.add.graphics();
+        libFloorSeg.fillStyle(0x4a2e1b);
+        libFloorSeg.fillRect(0, 0, libWidth, 24);
+        libFloorSeg.fillStyle(0x795548);
+        libFloorSeg.fillRect(0, 0, libWidth, 4);
+        libFloorSeg.generateTexture('lib_floor', libWidth, 24);
+        libFloorSeg.destroy();
+
+        const libPlat = p.create(libX + libWidth / 2, libFloorY + 12, 'lib_floor');
+        libPlat.refreshBody();
+
+        g.fillStyle(0x19141d);
+        g.fillRect(libX, 20, libWidth, libFloorY - 10);
+
+        g.fillStyle(0x1d293d, 0.85);
+        for (let lx = libX + 120; lx < WORLD_W - 100; lx += 260) {
+            g.fillRect(lx, 60, 110, 150);
+            g.fillCircle(lx + 55, 60, 55);
+        }
+
+        for (let bx = libX + 70; bx < WORLD_W - 120; bx += 180) {
+            this.add.image(bx, libFloorY - 130, 'bookshelf').setOrigin(0, 0);
+        }
+
+        for (let lx = libX + 160; lx < WORLD_W - 80; lx += 280) {
+            g.fillStyle(0xffee58);
+            g.fillCircle(lx, 70, 10);
+            g.fillStyle(0xffee58, 0.18);
+            g.fillCircle(lx, 70, 50);
+        }
+
+        this.add.text(libX + 320, 40, '📚 PERPUSTAKAAN SM ALL SAINTS (2ND FLOOR)', {
+            fontSize: '17px', fontFamily: 'monospace', color: '#ffea00',
+            fontStyle: 'bold', backgroundColor: '#3e2723', padding: { x: 10, y: 5 }
+        }).setOrigin(0.5);
+
+        this.add.text(libX + 780, 50, '🤫 SILA SENYAP / SILENCE PLEASE', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#c62828', padding: { x: 6, y: 3 }
+        }).setOrigin(0.5);
+
+        this.createCustomPlat(4750, libFloorY - 90, 130);
+        this.createCustomPlat(5050, libFloorY - 150, 140);
+        this.createCustomPlat(5350, libFloorY - 95, 130);
+        this.createCustomPlat(5650, libFloorY - 150, 140);
+    }
+
+    createCustomPlat(x, y, w) {
+        const pg = this.add.graphics();
+        pg.fillStyle(0x3e2723);
+        pg.fillRect(0, 0, w, 16);
+        pg.fillStyle(0x8d6e63);
+        pg.fillRect(0, 0, w, 3);
+        pg.generateTexture(`c_plat_${x}_${y}`, w, 16);
+        pg.destroy();
+
+        const plat = this.platforms.create(x + w / 2, y + 8, `c_plat_${x}_${y}`);
+        plat.refreshBody();
+        return plat;
+    }
+
+    // ============================================================
+    //  ENEMIES SPAWNING (THE SHOWERS)
+    // ============================================================
+    spawnShowers() {
+        const groundY = this.mapHeight - 35;
+        const positions = [
+            { x: 780, y: groundY - 60, trigger: true },
+            { x: 1300, y: groundY - 60 },
+            { x: 1750, y: groundY - 60 },
+            { x: 2200, y: groundY - 60 },
+            { x: 2550, y: groundY - 60 },
+            { x: 2950, y: groundY - 60 },
+            { x: 3610, y: groundY - 290 },
+            { x: 3880, y: groundY - 450 },
+            { x: 4160, y: groundY - 600 },
+        ];
+
+        positions.forEach((p) => {
+            const e = this.enemies.create(p.x, p.y, 'shower_idle');
+            e.setBounce(0);
+            e.setCollideWorldBounds(true);
+            e.body.setSize(28, 44);
+            e.body.setOffset(8, 4);
+
+            e.setData('hp', 3);
+            e.setData('maxHp', 3);
+            e.setData('trigger', p.trigger || false);
+            e.setData('patrolDir', 1);
+            e.setData('baseX', p.x);
+            e.setData('attackTimer', Phaser.Math.Between(120, 180));
+            e.setData('telegraphTimer', 0);
+            e.setData('telegraphType', null);
+            e.setData('stunTimer', 0);
+            e.setData('telegraphUI', null);
+        });
+    }
+
+    // ============================================================
+    //  HUD & CONTROLS
+    // ============================================================
+    createHUD() {
+        this.hud = this.add.container(0, 0).setScrollFactor(0).setDepth(300);
+
+        const hpBg = this.add.graphics();
+        hpBg.fillStyle(0x1a1a24, 0.9);
+        hpBg.fillRoundedRect(16, 16, 212, 28, 6);
+        hpBg.lineStyle(2, 0x4a4a60);
+        hpBg.strokeRoundedRect(16, 16, 212, 28, 6);
+        this.hud.add(hpBg);
+
+        this.hpBar = this.add.graphics();
+        this.hud.add(this.hpBar);
+        this.updatePlayerHP();
+
+        this.hpText = this.add.text(26, 22, 'HAMMADY (FORM 5)', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ffffff', fontStyle: 'bold'
+        });
+        this.hud.add(this.hpText);
+
+        this.bossHpBg = this.add.graphics();
+        this.bossHpBg.fillStyle(0x1a1a24, 0.9);
+        this.bossHpBg.fillRoundedRect(GAME_W / 2 - 180, 16, 360, 32, 6);
+        this.bossHpBg.lineStyle(2, 0xd50000);
+        this.bossHpBg.strokeRoundedRect(GAME_W / 2 - 180, 16, 360, 32, 6);
+        this.bossHpBg.setVisible(false);
+        this.hud.add(this.bossHpBg);
+
+        this.bossHpBar = this.add.graphics();
+        this.bossHpBar.setVisible(false);
+        this.hud.add(this.bossHpBar);
+
+        this.bossTitle = this.add.text(GAME_W / 2, 22, '💔 HANIS ("SHE WHO SHALL NOT BE NAMED")', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#ff5252', fontStyle: 'bold'
+        }).setOrigin(0.5, 0).setVisible(false);
+        this.hud.add(this.bossTitle);
+
+        this.locLabel = this.add.text(GAME_W / 2, GAME_H - 24, '📍 PINTU GERBANG (SM ALL SAINTS)', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#000000bb', padding: { x: 8, y: 3 }
+        }).setOrigin(0.5, 1);
+        this.hud.add(this.locLabel);
+    }
+
+    updatePlayerHP() {
+        this.hpBar.clear();
+        const pct = Math.max(0, this.playerHP / this.maxHP);
+        const col = pct > 0.5 ? 0x43a047 : (pct > 0.25 ? 0xfdd835 : 0xe53935);
+        this.hpBar.fillStyle(col);
+        this.hpBar.fillRoundedRect(20, 20, pct * 204, 20, 4);
+    }
+
+    updateBossHP() {
+        this.bossHpBar.clear();
+        const pct = Math.max(0, this.bossHP / this.bossMaxHP);
+        this.bossHpBar.fillStyle(0xd50000);
+        this.bossHpBar.fillRoundedRect(GAME_W / 2 - 176, 20, pct * 352, 24, 4);
+    }
+
+    createTouchControls() {
+        if (!this.sys.game.device.input.touch) return;
+
+        this.touchCtrl = this.add.container(0, 0).setScrollFactor(0).setDepth(299).setAlpha(0.65);
+
+        const leftBtn = this.add.circle(70, GAME_H - 70, 32, 0xffffff, 0.25).setInteractive();
+        this.add.text(70, GAME_H - 70, '◀', { fontSize: '26px' }).setOrigin(0.5);
+        this.touchCtrl.add(leftBtn);
+
+        const rightBtn = this.add.circle(150, GAME_H - 70, 32, 0xffffff, 0.25).setInteractive();
+        this.add.text(150, GAME_H - 70, '▶', { fontSize: '26px' }).setOrigin(0.5);
+        this.touchCtrl.add(rightBtn);
+
+        const jumpBtn = this.add.circle(110, GAME_H - 145, 30, 0x4fc3f7, 0.3).setInteractive();
+        this.add.text(110, GAME_H - 145, 'JUMP', { fontSize: '11px', fontStyle: 'bold' }).setOrigin(0.5);
+        this.touchCtrl.add(jumpBtn);
+
+        const punchBtn = this.add.circle(GAME_W - 75, GAME_H - 75, 36, 0xff5252, 0.35).setInteractive();
+        this.add.text(GAME_W - 75, GAME_H - 75, '👊 PUNCH\n(Z)', { fontSize: '10px', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+        this.touchCtrl.add(punchBtn);
+
+        const parryBtn = this.add.circle(GAME_W - 165, GAME_H - 75, 36, 0xffeb3b, 0.35).setInteractive();
+        this.add.text(GAME_W - 165, GAME_H - 75, '🛡️ PARRY\n/ DODGE (X)', { fontSize: '9px', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
+        this.touchCtrl.add(parryBtn);
+
+        this.touchState = { left: false, right: false, jump: false, punch: false, parry: false };
+
+        leftBtn.on('pointerdown', () => this.touchState.left = true);
+        leftBtn.on('pointerup', () => this.touchState.left = false);
+        leftBtn.on('pointerout', () => this.touchState.left = false);
+
+        rightBtn.on('pointerdown', () => this.touchState.right = true);
+        rightBtn.on('pointerup', () => this.touchState.right = false);
+        rightBtn.on('pointerout', () => this.touchState.right = false);
+
+        jumpBtn.on('pointerdown', () => this.touchState.jump = true);
+        jumpBtn.on('pointerup', () => this.touchState.jump = false);
+        jumpBtn.on('pointerout', () => this.touchState.jump = false);
+
+        punchBtn.on('pointerdown', () => this.touchState.punch = true);
+        punchBtn.on('pointerup', () => this.touchState.punch = false);
+        punchBtn.on('pointerout', () => this.touchState.punch = false);
+
+        parryBtn.on('pointerdown', () => this.touchState.parry = true);
+        parryBtn.on('pointerup', () => this.touchState.parry = false);
+        parryBtn.on('pointerout', () => this.touchState.parry = false);
+    }
+
+    // ============================================================
+    //  DIALOGUE SYSTEM
+    // ============================================================
+    showDialogue(lines, onComplete) {
+        this.dialogQueue = [...lines];
+        this.dialogCallback = onComplete || null;
+        this.inCutscene = true;
+        this.player.setVelocity(0, 0);
+        this.showNextDialogue();
+    }
+
+    showNextDialogue() {
+        if (this.dialogQueue.length === 0) {
+            this.hideDialogue();
+            return;
+        }
+
+        const line = this.dialogQueue.shift();
+
+        if (!this.dialogBox) {
+            this.dialogBox = this.add.graphics().setScrollFactor(0).setDepth(400);
+            this.dialogText = this.add.text(45, GAME_H - 105, '', {
+                fontSize: '14px', fontFamily: 'monospace', color: '#ffffff',
+                wordWrap: { width: GAME_W - 90 }, lineSpacing: 4
+            }).setScrollFactor(0).setDepth(401);
+
+            this.dialogSpeaker = this.add.text(45, GAME_H - 128, '', {
+                fontSize: '13px', fontFamily: 'monospace', color: '#ffea00',
+                fontStyle: 'bold'
+            }).setScrollFactor(0).setDepth(401);
+
+            this.dialogPrompt = this.add.text(GAME_W - 130, GAME_H - 35, '▼ [SPACE / TAP]', {
+                fontSize: '11px', fontFamily: 'monospace', color: '#aaaaaa'
+            }).setScrollFactor(0).setDepth(401);
+        }
+
+        this.dialogBox.clear();
+        this.dialogBox.fillStyle(0x0e0e17, 0.93);
+        this.dialogBox.fillRoundedRect(25, GAME_H - 135, GAME_W - 50, 115, 8);
+        this.dialogBox.lineStyle(2, 0xf5c542, 0.85);
+        this.dialogBox.strokeRoundedRect(25, GAME_H - 135, GAME_W - 50, 115, 8);
+
+        this.dialogSpeaker.setText(line.speaker || 'HAMMADY');
+        this.dialogText.setText('');
+        this.dialogPrompt.setVisible(false);
+
+        const fullText = line.text;
+        let charIdx = 0;
+
+        if (this.typewriterTimer) this.typewriterTimer.destroy();
+        this.typewriterTimer = this.time.addEvent({
+            delay: 18,
+            repeat: fullText.length - 1,
+            callback: () => {
+                charIdx++;
+                this.dialogText.setText(fullText.substring(0, charIdx));
+                if (charIdx >= fullText.length) {
+                    this.dialogPrompt.setVisible(true);
+                }
+            }
+        });
+
+        const advance = () => {
+            if (charIdx < fullText.length) {
+                if (this.typewriterTimer) this.typewriterTimer.destroy();
+                charIdx = fullText.length;
+                this.dialogText.setText(fullText);
+                this.dialogPrompt.setVisible(true);
+                return;
+            }
+            this.input.keyboard.off('keydown-SPACE', advance);
+            this.input.off('pointerdown', advance);
+            this.showNextDialogue();
+        };
+
+        this.input.keyboard.once('keydown-SPACE', advance);
+        this.input.once('pointerdown', advance);
+    }
+
+    hideDialogue() {
+        if (this.dialogBox) {
+            this.dialogBox.clear();
+            this.dialogText.setText('');
+            this.dialogSpeaker.setText('');
+            this.dialogPrompt.setVisible(false);
+        }
+        this.inCutscene = false;
+        if (this.dialogCallback) {
+            const cb = this.dialogCallback;
+            this.dialogCallback = null;
+            cb();
+        }
+    }
+
+    // ============================================================
+    //  CUTSCENES & LORE (SHOWER / SMELL JOKE + YANDERE EX HANIS)
+    // ============================================================
+    startOpeningCutscene() {
+        this.showDialogue([
+            { speaker: 'HAMMADY (FORM 5)', text: 'No no no no no...' },
+            { speaker: 'HAMMADY (FORM 5)', text: 'I left my Add Maths formula book AND my Casio fx-570 up in the 2nd floor library!' },
+            { speaker: 'HAMMADY (FORM 5)', text: 'SPM Trials are tomorrow morning. If I fail, my parents will end me.' },
+            { speaker: 'HAMMADY (FORM 5)', text: "It's already dark and raining... I have to pass the Dewan, climb the tower stairs, and reach the Library!" },
+        ]);
+    }
+
+    triggerFirstShowerCutscene() {
+        this.firstShowerSeen = true;
+        this.showDialogue([
+            { speaker: 'HAMMADY', text: 'Wait — is that... a SHOWER?!' },
+            { speaker: 'HAMMADY', text: "No way. Get that away from me! I can NOT afford to get hit by that!" },
+            { speaker: 'HAMMADY', text: "If water touches me, my aura will fade to zero!" },
+            { speaker: 'HAMMADY', text: "I have to keep my aura intact. Stay back with that water!" },
+            { speaker: 'TUTORIAL / COMBAT GUIDE', text: '🔴 RED FLASH = DODGE! (Unblockable water blast. Jump or roll to preserve your aura!)\n\n⚪ WHITE FLASH = PARRY! (Press X to parry the droplets, stun the shower, and deal TRIPLE counter damage!)' },
+        ]);
+    }
+
+    triggerBossCutscene() {
+        this.bossTriggered = true;
+        this.showDialogue([
+            { speaker: 'HAMMADY', text: 'Huff... puff... finally climbed the stairs to the 2nd floor Library.' },
+            { speaker: 'HAMMADY', text: 'Wait. Someone is standing right in front of the study tables...' },
+            { speaker: 'HAMMADY', text: 'Oh no. Not... HER.' },
+            { speaker: 'HAMMADY', text: '"She Who Shall Not Be Named."' },
+            { speaker: 'HANIS (YOUR EX)', text: 'Well, well, well... Look who decided to show up in the middle of a storm. ❤️' },
+            { speaker: 'HANIS (YOUR EX)', text: 'Did you really think you could break up with me and just leave me on "Delivered", Hammady?' },
+            { speaker: 'HAMMADY', text: 'Hanis, please! We broke up 4 months ago! I just came back to get my calculator for SPM Trials tomorrow!' },
+            { speaker: 'HANIS (YOUR EX)', text: 'FOR YOUR CALCULATOR?! You ran through the rain at night for a CALCULATOR... but you wouldn\'t reply to my 47 calls?!' },
+            { speaker: 'HANIS (YOUR EX)', text: 'If we can\'t take SPM together... you\'re NEVER leaving this library, Hammady~ ❤️' },
+            { speaker: 'HAMMADY', text: 'She is completely unhinged!!' },
+        ], () => {
+            this.spawnBoss();
+        });
+    }
+
+    // ============================================================
+    //  COMBAT SYSTEM (PUNCH, TELEGRAPH, PARRY, DODGE)
+    // ============================================================
+    doPunch() {
+        if (this.punchCooldown > 0 || !this.playerAlive || this.inCutscene) return;
+
+        this.isPunching = true;
+        this.punchCooldown = 14;
+        sfx.punch();
+
+        const now = this.time.now;
+        if (now - this.lastPunchTime < 450) {
+            this.comboCount = Math.min(this.comboCount + 1, 3);
+        } else {
+            this.comboCount = 1;
+        }
+        this.lastPunchTime = now;
+
+        this.player.setTexture('player_punch');
+        this.time.delayedCall(160, () => {
+            if (this.player && this.player.active && !this.isParrying) {
+                this.player.setTexture('player_idle');
+            }
+            this.isPunching = false;
+        });
+
+        const reach = 60;
+        const px = this.player.x + (this.facingRight ? reach : -reach);
+        const py = this.player.y;
+        const damage = this.comboCount >= 3 ? 3 : 1;
+
+        this.enemies.getChildren().forEach((e) => {
+            if (!e.active) return;
+            const dist = Phaser.Math.Distance.Between(px, py, e.x, e.y);
+            if (dist < 65) {
+                const isStunned = e.getData('stunTimer') > 0;
+                const finalDmg = isStunned ? damage * 3 : damage;
+                this.damageEnemy(e, finalDmg);
+            }
+        });
+
+        if (this.boss && this.boss.active) {
+            const dist = Phaser.Math.Distance.Between(px, py, this.boss.x, this.boss.y);
+            if (dist < 70) {
+                const isStunned = this.boss.getData('stunTimer') > 0;
+                const finalDmg = isStunned ? damage * 3 : damage;
+                this.damageBoss(finalDmg);
+            }
+        }
+    }
+
+    doParryOrDodge() {
+        if (this.parryCooldown > 0 || !this.playerAlive || this.inCutscene) return;
+
+        this.parryCooldown = 26;
+        let successfulParry = false;
+
+        if (this.activeRuler && this.activeRuler.active) {
+            const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.activeRuler.x, this.activeRuler.y);
+            if (dist < 150) {
+                successfulParry = true;
+                this.activeRuler.destroy();
+                this.activeRuler = null;
+
+                if (this.boss && this.boss.active) {
+                    this.boss.setData('stunTimer', 160);
+                    this.boss.setData('telegraphType', null);
+                    this.boss.setData('telegraphTimer', 0);
+                    this.removeTelegraphUI(this.boss);
+                    this.boss.setTint(0xffff00);
+                }
+
+                sfx.parrySuccess();
+                this.cameras.main.flash(200, 255, 255, 120);
+
+                const pText = this.add.text(this.player.x, this.player.y - 60, '✨ RULER PARRIED! STUNNED! ✨', {
+                    fontSize: '18px', fontFamily: 'monospace', color: '#ffea00',
+                    fontStyle: 'bold', stroke: '#000', strokeThickness: 4
+                }).setOrigin(0.5).setDepth(350);
+
+                this.tweens.add({
+                    targets: pText, y: this.player.y - 110, alpha: 0, duration: 950,
+                    onComplete: () => pText.destroy()
+                });
+            }
+        }
+
+        const checkEntity = (ent) => {
+            if (!ent || !ent.active) return false;
+            const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ent.x, ent.y);
+            if (dist > 140) return false;
+
+            const tType = ent.getData('telegraphType');
+            const tTimer = ent.getData('telegraphTimer');
+
+            if (tType === 'white' && tTimer > 0) {
+                ent.setData('stunTimer', 140);
+                ent.setData('telegraphType', null);
+                ent.setData('telegraphTimer', 0);
+                this.removeTelegraphUI(ent);
+
+                ent.setTexture('shower_idle');
+                ent.setTint(0xffff00);
+
+                sfx.parrySuccess();
+                this.cameras.main.flash(180, 255, 255, 120);
+
+                const pText = this.add.text(ent.x, ent.y - 50, '✨ PARRY! AURA PROTECTED! ✨', {
+                    fontSize: '16px', fontFamily: 'monospace', color: '#ffea00',
+                    fontStyle: 'bold', stroke: '#000', strokeThickness: 4
+                }).setOrigin(0.5).setDepth(350);
+
+                this.tweens.add({
+                    targets: pText, y: ent.y - 95, alpha: 0, duration: 900,
+                    onComplete: () => pText.destroy()
+                });
+
+                return true;
+            }
+            return false;
+        };
+
+        this.enemies.getChildren().forEach((e) => {
+            if (checkEntity(e)) successfulParry = true;
+        });
+
+        if (successfulParry) {
+            this.player.setTexture('player_parry');
+            this.time.delayedCall(300, () => {
+                if (this.player && this.player.active) this.player.setTexture('player_idle');
+            });
+        } else {
+            sfx.dodge();
+            this.isDodging = true;
+            this.dodgeTimer = 22;
+            this.invincibleTimer = 26;
+            this.player.setAlpha(0.45);
+
+            const rollDir = this.facingRight ? 1 : -1;
+            this.player.setVelocityX(rollDir * 320);
+
+            const dText = this.add.text(this.player.x, this.player.y - 45, '💨 AURA DODGE!', {
+                fontSize: '14px', fontFamily: 'monospace', color: '#4fc3f7',
+                fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+            }).setOrigin(0.5).setDepth(350);
+            this.tweens.add({
+                targets: dText, y: this.player.y - 80, alpha: 0, duration: 600,
+                onComplete: () => dText.destroy()
+            });
+        }
+    }
+
+    damageEnemy(enemy, amount) {
+        const hp = enemy.getData('hp') - amount;
+        enemy.setData('hp', hp);
+        sfx.hit();
+
+        enemy.setTint(0xff1744);
+        this.time.delayedCall(120, () => {
+            if (enemy.active && enemy.getData('stunTimer') <= 0) enemy.clearTint();
+        });
+
+        const isCrit = amount >= 3;
+        const dmgText = this.add.text(enemy.x, enemy.y - 30, `-${amount}${isCrit ? ' AURA CRIT!' : ''}`, {
+            fontSize: isCrit ? '18px' : '15px', fontFamily: 'monospace',
+            color: isCrit ? '#ffea00' : '#ff5252', fontStyle: 'bold',
+            stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5).setDepth(350);
+
+        this.tweens.add({
+            targets: dmgText, y: enemy.y - 65, alpha: 0, duration: 650,
+            onComplete: () => dmgText.destroy()
+        });
+
+        const kb = enemy.x > this.player.x ? 1 : -1;
+        enemy.setVelocityX(kb * 160);
+
+        if (hp <= 0) {
+            this.destroyShower(enemy);
+        }
+    }
+
+    destroyShower(enemy) {
+        this.removeTelegraphUI(enemy);
+
+        for (let i = 0; i < 12; i++) {
+            const p = this.add.circle(
+                enemy.x + Phaser.Math.Between(-15, 15),
+                enemy.y + Phaser.Math.Between(-15, 15),
+                Phaser.Math.Between(3, 7), 0x4fc3f7, 0.9
+            ).setDepth(200);
+
+            this.tweens.add({
+                targets: p,
+                x: p.x + Phaser.Math.Between(-60, 60),
+                y: p.y + Phaser.Math.Between(-70, 10),
+                alpha: 0, duration: 450,
+                onComplete: () => p.destroy()
+            });
+        }
+
+        enemy.destroy();
+
+        const banter = BANTER[banterIdx % BANTER.length];
+        banterIdx++;
+
+        const bText = this.add.text(this.player.x, this.player.y - 55, `"${banter}"`, {
+            fontSize: '12px', fontFamily: 'monospace', color: '#ffea00',
+            fontStyle: 'bold', stroke: '#000', strokeThickness: 3,
+            wordWrap: { width: 280 }, align: 'center'
+        }).setOrigin(0.5).setDepth(350);
+
+        this.tweens.add({
+            targets: bText, y: this.player.y - 95, alpha: 0, duration: 2400,
+            onComplete: () => bText.destroy()
+        });
+    }
+
+    updateEnemyAI(e) {
+        if (!e.active) return;
+
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, e.x, e.y);
+
+        if (e.getData('trigger') && !this.firstShowerSeen && dist < 280) {
+            this.triggerFirstShowerCutscene();
+            e.setData('trigger', false);
+        }
+
+        const stun = e.getData('stunTimer');
+        if (stun > 0) {
+            e.setData('stunTimer', stun - 1);
+            e.setVelocityX(0);
+            if (stun <= 1) {
+                e.clearTint();
+                e.setTexture('shower_idle');
+            }
+            return;
+        }
+
+        const tTimer = e.getData('telegraphTimer');
+        if (tTimer > 0) {
+            e.setData('telegraphTimer', tTimer - 1);
+            e.setVelocityX(0);
+
+            const ui = e.getData('telegraphUI');
+            if (ui) ui.setPosition(e.x, e.y - 45);
+
+            if (tTimer === 1) {
+                const tType = e.getData('telegraphType');
+                e.setData('telegraphType', null);
+                this.removeTelegraphUI(e);
+                e.setTexture('shower_idle');
+
+                if (dist < 75 && this.invincibleTimer <= 0) {
+                    this.takeDamage(tType === 'red' ? 16 : 10);
+                }
+            }
+            return;
+        }
+
+        if (dist < 340) {
+            const dir = this.player.x < e.x ? -1 : 1;
+            if (dist > 75) {
+                e.setVelocityX(dir * 70);
+            } else {
+                e.setVelocityX(0);
+            }
+            e.setFlipX(dir < 0);
+
+            let at = e.getData('attackTimer') - 1;
+            if (at <= 0) {
+                // If player is at mid-range: choose between AOE Rain Zone or Projectile Water Drop!
+                if (dist > 100) {
+                    if (Math.random() > 0.5) {
+                        // 1. AOE Rain Zone Attack
+                        sfx.warningRed();
+                        e.setTexture('shower_red');
+                        const prompt = this.add.text(e.x, e.y - 45, '🌧️ RAIN SUMMON!', {
+                            fontSize: '11px', fontFamily: 'monospace', color: '#ff3d00',
+                            fontStyle: 'bold', backgroundColor: '#000000dd', padding: { x: 5, y: 3 },
+                            stroke: '#000', strokeThickness: 2
+                        }).setOrigin(0.5).setDepth(350);
+
+                        this.time.delayedCall(600, () => {
+                            if (prompt && prompt.active) prompt.destroy();
+                            if (e && e.active) e.setTexture('shower_idle');
+                        });
+
+                        this.triggerShowerAoe(this.player.x);
+                        at = Phaser.Math.Between(130, 180);
+                    } else {
+                        // 2. Projectile Water Droplet
+                        sfx.warningWhite();
+                        e.setTexture('shower_white');
+                        const prompt = this.add.text(e.x, e.y - 45, '💦 WATER SPLASH!', {
+                            fontSize: '11px', fontFamily: 'monospace', color: '#00e5ff',
+                            fontStyle: 'bold', backgroundColor: '#000000dd', padding: { x: 5, y: 3 },
+                            stroke: '#000', strokeThickness: 2
+                        }).setOrigin(0.5).setDepth(350);
+
+                        this.time.delayedCall(450, () => {
+                            if (prompt && prompt.active) prompt.destroy();
+                            if (e && e.active) {
+                                e.setTexture('shower_idle');
+                                this.shootShowerProjectile(e);
+                            }
+                        });
+                        at = Phaser.Math.Between(100, 150);
+                    }
+                } else {
+                    // Close range: Melee Red / White attacks
+                    const attackType = Math.random() > 0.4 ? 'white' : 'red';
+                    const windupFrames = 72;
+
+                    e.setData('telegraphType', attackType);
+                    e.setData('telegraphTimer', windupFrames);
+                    e.setTexture(attackType === 'red' ? 'shower_red' : 'shower_white');
+
+                    if (attackType === 'red') sfx.warningRed();
+                    else sfx.warningWhite();
+
+                    const labelText = attackType === 'red' ? '⚠️ SOAP BLAST! (DODGE)' : '✨ WATER DROP! (PARRY)';
+                    const labelCol = attackType === 'red' ? '#ff3d00' : '#ffff00';
+
+                    const prompt = this.add.text(e.x, e.y - 45, labelText, {
+                        fontSize: '11px', fontFamily: 'monospace', color: labelCol,
+                        fontStyle: 'bold', backgroundColor: '#000000dd', padding: { x: 5, y: 3 },
+                        stroke: '#000', strokeThickness: 2
+                    }).setOrigin(0.5).setDepth(350);
+
+                    this.tweens.add({
+                        targets: prompt, scale: 1.15, duration: 250, yoyo: true, repeat: -1
+                    });
+
+                    e.setData('telegraphUI', prompt);
+                    at = Phaser.Math.Between(120, 180);
+                }
+            }
+            e.setData('attackTimer', at);
+        } else {
+            const bx = e.getData('baseX');
+            const pDir = e.getData('patrolDir');
+            e.setVelocityX(pDir * 35);
+            e.setFlipX(pDir < 0);
+            if (Math.abs(e.x - bx) > 75) {
+                e.setData('patrolDir', -pDir);
+            }
+        }
+    }
+
+    removeTelegraphUI(entity) {
+        const ui = entity.getData('telegraphUI');
+        if (ui) {
+            ui.destroy();
+            entity.setData('telegraphUI', null);
+        }
+    }
+
+    // ============================================================
+    //  BOSS: HANIS (YANDERE EX-GIRLFRIEND)
+    // ============================================================
+    spawnBoss() {
+        this.boss = this.physics.add.sprite(5600, 260, 'boss_idle');
+        this.boss.setCollideWorldBounds(true);
+        this.boss.body.setSize(30, 56);
+        this.boss.body.setOffset(8, 4);
+        this.physics.add.collider(this.boss, this.platforms);
+
+        this.bossHP = 150;
+        this.bossMaxHP = 150;
+        this.bossPhase = 1;
+        this.bossCooldown = 45;
+        this.isBossDashing = false;
+
+        this.boss.setData('telegraphType', null);
+        this.boss.setData('telegraphTimer', 0);
+        this.boss.setData('stunTimer', 0);
+        this.boss.setData('telegraphUI', null);
+
+        this.bossHpBg.setVisible(true);
+        this.bossHpBar.setVisible(true);
+        this.bossTitle.setVisible(true);
+        this.updateBossHP();
+    }
+
+    updateBossAI() {
+        if (!this.boss || !this.boss.active || this.inCutscene) return;
+
+        if (this.isBossDashing) {
+            const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
+            if (dist < 60 && this.invincibleTimer <= 0) {
+                this.takeDamage(22);
+            }
+            return;
+        }
+
+        const stun = this.boss.getData('stunTimer');
+        if (stun > 0) {
+            this.boss.setData('stunTimer', stun - 1);
+            this.boss.setVelocityX(0);
+            if (stun <= 1) this.boss.clearTint();
+            return;
+        }
+
+        const tTimer = this.boss.getData('telegraphTimer');
+        if (tTimer > 0) {
+            this.boss.setData('telegraphTimer', tTimer - 1);
+            this.boss.setVelocityX(0);
+
+            const ui = this.boss.getData('telegraphUI');
+            if (ui) ui.setPosition(this.boss.x, this.boss.y - 50);
+
+            if (tTimer === 1) {
+                const tType = this.boss.getData('telegraphType');
+                this.boss.setData('telegraphType', null);
+                this.removeTelegraphUI(this.boss);
+                this.boss.clearTint();
+
+                if (tType === 'red') {
+                    this.executeYandereDash();
+                } else if (tType === 'white') {
+                    this.executeGiantRulerSlam();
+                }
+            }
+            return;
+        }
+
+        const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
+        this.boss.setFlipX(this.player.x < this.boss.x);
+
+        const speed = this.bossPhase === 3 ? 120 : (this.bossPhase === 2 ? 90 : 60);
+        if (dist > 110) {
+            const dir = this.player.x < this.boss.x ? -1 : 1;
+            this.boss.setVelocityX(dir * speed);
+        } else {
+            this.boss.setVelocityX(0);
+        }
+
+        let cd = this.bossCooldown - 1;
+        if (cd <= 0) {
+            const roll = Math.random();
+
+            if (roll < 0.32) {
+                this.throwSlowChalk();
+                if (this.bossPhase === 3) {
+                    this.time.delayedCall(240, () => this.throwSlowChalk());
+                }
+                cd = this.bossPhase === 3 ? 18 : (this.bossPhase === 2 ? 28 : 42);
+            } else if (roll < 0.68) {
+                sfx.warningRed();
+                this.boss.setData('telegraphType', 'red');
+                const tTime = this.bossPhase === 3 ? 55 : (this.bossPhase === 2 ? 65 : 72);
+                this.boss.setData('telegraphTimer', tTime);
+                this.boss.setTint(0xff1744);
+
+                const prompt = this.add.text(this.boss.x, this.boss.y - 50, '⚠️ YANDERE DASH! (JUMP / DODGE!)', {
+                    fontSize: '12px', fontFamily: 'monospace', color: '#ff3d00',
+                    fontStyle: 'bold', backgroundColor: '#000000dd', padding: { x: 6, y: 3 },
+                    stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5).setDepth(350);
+
+                this.boss.setData('telegraphUI', prompt);
+                cd = tTime + (this.bossPhase === 3 ? 12 : (this.bossPhase === 2 ? 18 : 28));
+            } else {
+                sfx.warningWhite();
+                this.boss.setData('telegraphType', 'white');
+                const tTime = this.bossPhase === 3 ? 50 : (this.bossPhase === 2 ? 60 : 68);
+                this.boss.setData('telegraphTimer', tTime);
+                this.boss.setTint(0xffffff);
+
+                const prompt = this.add.text(this.boss.x, this.boss.y - 50, '✨ 1-METER RULER SLAM! (PARRY!)', {
+                    fontSize: '12px', fontFamily: 'monospace', color: '#ffff00',
+                    fontStyle: 'bold', backgroundColor: '#000000dd', padding: { x: 6, y: 3 },
+                    stroke: '#000', strokeThickness: 3
+                }).setOrigin(0.5).setDepth(350);
+
+                this.boss.setData('telegraphUI', prompt);
+                cd = tTime + (this.bossPhase === 3 ? 12 : (this.bossPhase === 2 ? 18 : 28));
+            }
+        }
+        this.bossCooldown = cd;
+    }
+
+    executeYandereDash() {
+        if (!this.boss || !this.boss.active) return;
+        this.isBossDashing = true;
+        sfx.dashWhoosh();
+
+        const dashDir = this.player.x < this.boss.x ? -1 : 1;
+        this.boss.setVelocityX(dashDir * 460);
+        this.boss.setTint(0xff5252);
+
+        this.time.addEvent({
+            delay: 45,
+            repeat: 8,
+            callback: () => {
+                if (this.boss && this.boss.active) {
+                    const shadow = this.add.sprite(this.boss.x, this.boss.y, 'boss_idle').setTint(0xff1744).setAlpha(0.6);
+                    this.tweens.add({
+                        targets: shadow, alpha: 0, duration: 250, onComplete: () => shadow.destroy()
+                    });
+                }
+            }
+        });
+
+        this.time.delayedCall(450, () => {
+            if (this.boss && this.boss.active) {
+                this.boss.setVelocityX(0);
+                this.boss.clearTint();
+                this.isBossDashing = false;
+            }
+        });
+    }
+
+    executeGiantRulerSlam() {
+        if (!this.boss || !this.boss.active) return;
+
+        const targetX = this.player.x;
+        const targetY = this.player.y;
+
+        const ruler = this.physics.add.sprite(targetX, targetY - 140, 'giant_ruler');
+        ruler.body.setAllowGravity(false);
+        ruler.setDepth(340);
+        ruler.setAngle(this.player.x < this.boss.x ? 35 : -35);
+        this.activeRuler = ruler;
+
+        this.tweens.add({
+            targets: ruler,
+            y: targetY - 20,
+            angle: 0,
+            duration: 380,
+            ease: 'Cubic.easeIn',
+            onComplete: () => {
+                sfx.rulerSmack();
+                this.cameras.main.shake(220, 0.012);
+
+                if (this.activeRuler && this.activeRuler.active) {
+                    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, ruler.x, ruler.y);
+                    if (dist < 85 && this.invincibleTimer <= 0) {
+                        this.takeDamage(18);
+                    }
+                    this.activeRuler.destroy();
+                    this.activeRuler = null;
+                }
+            }
+        });
+    }
+
+    throwSlowChalk() {
+        if (!this.boss || !this.boss.active) return;
+        sfx.chalkThrow();
+
+        const chalk = this.bossProjectiles.create(this.boss.x, this.boss.y - 12, 'chalk');
+        const dir = this.player.x < this.boss.x ? -1 : 1;
+        chalk.setVelocityX(dir * 130);
+        chalk.setVelocityY(-40);
+        chalk.setBounce(0);
+
+        this.tweens.add({
+            targets: chalk, angle: 360 * dir, duration: 600, repeat: -1
+        });
+
+        const trail = this.add.particles(0, 0, 'chalk', {
+            follow: chalk,
+            scale: { start: 0.5, end: 0 },
+            alpha: { start: 0.5, end: 0 },
+            lifespan: 250,
+            quantity: 1,
+            frequency: 60
+        });
+
+        this.time.delayedCall(4500, () => {
+            if (chalk && chalk.active) {
+                trail.destroy();
+                chalk.destroy();
+            }
+        });
+    }
+
+    damageBoss(amount) {
+        this.bossHP = Math.max(0, this.bossHP - amount);
+        this.updateBossHP();
+        sfx.hit();
+
+        this.boss.setTint(0xff1744);
+        this.time.delayedCall(120, () => {
+            if (this.boss && this.boss.active && this.boss.getData('stunTimer') <= 0) {
+                this.boss.clearTint();
+            }
+        });
+
+        const isCrit = amount >= 3;
+        const dmgText = this.add.text(this.boss.x, this.boss.y - 45, `-${amount}${isCrit ? ' HEAVY HIT!' : ''}`, {
+            fontSize: '18px', fontFamily: 'monospace', color: isCrit ? '#ffea00' : '#ff5252',
+            fontStyle: 'bold', stroke: '#000', strokeThickness: 3
+        }).setOrigin(0.5).setDepth(350);
+
+        this.tweens.add({
+            targets: dmgText, y: this.boss.y - 85, alpha: 0, duration: 750,
+            onComplete: () => dmgText.destroy()
+        });
+
+        const pct = this.bossHP / this.bossMaxHP;
+        if (pct <= 0.65 && this.bossPhase === 1) {
+            this.bossPhase = 2;
+            this.cameras.main.shake(350, 0.012);
+            this.showDialogue([
+                { speaker: 'HANIS (YOUR EX)', text: 'Why are you fighting back?! Remember when you promised we\'d go to UMS together?! ❤️' },
+                { speaker: 'HAMMADY', text: 'I said that in Form 3 so you\'d stop crying over getting 88% on a pop quiz!!' }
+            ]);
+        } else if (pct <= 0.30 && this.bossPhase === 2) {
+            this.bossPhase = 3;
+            this.cameras.main.shake(500, 0.018);
+            this.showDialogue([
+                { speaker: 'HANIS (YOUR EX)', text: 'IF I CANNOT HAVE YOUR ATTENTION, NOBODY AT ALL SAINTS WILL!!' },
+                { speaker: 'HAMMADY', text: 'This relationship was a massive red flag from day one!' }
+            ]);
+        }
+
+        if (this.bossHP <= 0) {
+            this.defeatBoss();
+        }
+    }
+
+    defeatBoss() {
+        this.bossDefeated = true;
+        this.removeTelegraphUI(this.boss);
+
+        if (this.activeRuler && this.activeRuler.active) {
+            this.activeRuler.destroy();
+            this.activeRuler = null;
+        }
+
+        this.cameras.main.flash(600, 255, 255, 255);
+        this.cameras.main.shake(600, 0.02);
+
+        this.boss.destroy();
+        this.bossHpBg.setVisible(false);
+        this.bossHpBar.setVisible(false);
+        this.bossTitle.setVisible(false);
+        this.bossProjectiles.clear(true, true);
+
+        this.time.delayedCall(800, () => {
+            this.showDialogue([
+                { speaker: 'HAMMADY', text: '*quickly grabs Casio fx-570 calculator and formula book from study desk*' },
+                { speaker: 'HAMMADY', text: 'GOT THEM! My calculator, formula book, and revision notes!' },
+                { speaker: 'HAMMADY', text: 'I survived our toxic relationship, Hanis... and I will survive the SPM trials tomorrow!' },
+                { speaker: 'HAMMADY', text: "...Not as painful as Delson." },
+            ], () => {
+                this.scene.start('Victory');
+            });
+        });
+    }
+
+    // ============================================================
+    //  DAMAGE & RESPAWN STATE RESET
+    // ============================================================
+    handleEnemyContact(player, enemy) {
+        if (this.invincibleTimer > 0 || !this.playerAlive || this.inCutscene) return;
+        if (enemy.getData('stunTimer') > 0) return;
+        this.takeDamage(10);
+    }
+
+    handleChalkHit(player, chalk) {
+        if (this.invincibleTimer > 0 || !this.playerAlive || this.inCutscene) return;
+        chalk.destroy();
+        this.takeDamage(12);
+    }
+
+    handleShowerProjectileHit(player, proj) {
+        if (this.invincibleTimer > 0 || !this.playerAlive || this.inCutscene) return;
+        proj.destroy();
+        this.takeDamage(10);
+    }
+
+    triggerShowerAoe(targetX) {
+        const groundY = this.mapHeight - 35;
+        const aoeW = 120;
+
+        const zoneG = this.add.graphics().setDepth(150);
+        zoneG.fillStyle(0xff1744, 0.25);
+        zoneG.fillRect(targetX - aoeW / 2, groundY - 60, aoeW, 65);
+        zoneG.lineStyle(2, 0xff1744, 0.85);
+        zoneG.strokeRect(targetX - aoeW / 2, groundY - 60, aoeW, 65);
+
+        const warnText = this.add.text(targetX, groundY - 72, '⚠️ RAIN ZONE! (RUN!)', {
+            fontSize: '11px', fontFamily: 'monospace', color: '#ff1744',
+            fontStyle: 'bold', backgroundColor: '#000000cc', padding: { x: 4, y: 2 }
+        }).setOrigin(0.5).setDepth(160);
+
+        this.tweens.add({
+            targets: warnText, scale: 1.15, duration: 250, yoyo: true, repeat: 3
+        });
+
+        this.time.delayedCall(950, () => {
+            if (!this.playerAlive || this.inCutscene) {
+                zoneG.destroy();
+                warnText.destroy();
+                return;
+            }
+            warnText.setText('🌧️ DOWNPOUR!');
+            warnText.setColor('#4fc3f7');
+            zoneG.clear();
+            zoneG.fillStyle(0x0288d1, 0.38);
+            zoneG.fillRect(targetX - aoeW / 2, groundY - 60, aoeW, 65);
+
+            const rainEvent = this.time.addEvent({
+                delay: 80,
+                repeat: 10,
+                callback: () => {
+                    if (zoneG && zoneG.active) {
+                        for (let i = 0; i < 3; i++) {
+                            const rx = targetX - aoeW / 2 + Phaser.Math.Between(6, aoeW - 6);
+                            const drop = this.add.image(rx, groundY - 60, 'raindrop').setTint(0x00e5ff).setDepth(155);
+                            this.tweens.add({
+                                targets: drop, y: groundY - 5, duration: 160, onComplete: () => drop.destroy()
+                            });
+                        }
+                    }
+                    if (Math.abs(this.player.x - targetX) < aoeW / 2 && this.player.y > groundY - 75) {
+                        if (this.invincibleTimer <= 0) {
+                            this.takeDamage(8);
+                        }
+                    }
+                }
+            });
+
+            this.time.delayedCall(850, () => {
+                zoneG.destroy();
+                warnText.destroy();
+            });
+        });
+    }
+
+    shootShowerProjectile(enemy) {
+        if (!enemy || !enemy.active) return;
+        sfx.dodge();
+        const dir = this.player.x < enemy.x ? -1 : 1;
+        const drop = this.showerProjectiles.create(enemy.x + dir * 15, enemy.y, 'raindrop');
+        drop.setScale(2.5);
+        drop.setTint(0x00e5ff);
+        drop.body.setAllowGravity(false);
+        drop.setVelocityX(dir * 170);
+
+        this.time.delayedCall(2800, () => {
+            if (drop && drop.active) drop.destroy();
+        });
+    }
+
+    takeDamage(amount) {
+        if (this.stunTimer > 0 || this.invincibleTimer > 0) return;
+
+        this.playerHP = Math.max(0, this.playerHP - amount);
+        this.updatePlayerHP();
+        this.stunTimer = 25;
+        this.invincibleTimer = 35;
+        sfx.hit();
+
+        this.cameras.main.shake(120, 0.008);
+        this.player.setTint(0xff1744);
+        this.time.delayedCall(180, () => {
+            if (this.player && this.player.active) this.player.clearTint();
+        });
+
+        if (this.playerHP <= 0) {
+            this.playerDefeat();
+        }
+    }
+
+    playerDefeat() {
+        this.playerAlive = false;
+        this.player.setTint(0xff0000);
+        this.player.setVelocity(0, 0);
+
+        // Cancel active hazards so they don't hit or linger on a defeated player
+        if (this.boss && this.boss.active) {
+            this.boss.setVelocityX(0);
+            this.isBossDashing = false;
+            this.removeTelegraphUI(this.boss);
+        }
+        if (this.activeRuler && this.activeRuler.active) {
+            this.activeRuler.destroy();
+            this.activeRuler = null;
+        }
+        if (this.bossProjectiles) this.bossProjectiles.clear(true, true);
+        if (this.showerProjectiles) this.showerProjectiles.clear(true, true);
+
+        // Darken screen with an in-game overlay (NOT camera fade, so text and retry button remain 100% visible!)
+        const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0)
+            .setScrollFactor(0)
+            .setDepth(450);
+        this.tweens.add({
+            targets: overlay,
+            fillAlpha: 0.84,
+            duration: 400
+        });
+
+        const isBossDeath = this.bossTriggered || this.player.x > 4400;
+
+        const defeatTitle = this.add.text(
+            GAME_W / 2, GAME_H / 2 - 45,
+            isBossDeath ? '💔 DEFEATED BY YOUR EX' : '🌧️ AURA DRAINED: YOU GOT WASHED',
+            {
+                fontSize: '28px', fontFamily: 'monospace',
+                color: isBossDeath ? '#ff1744' : '#ff3d00',
+                fontStyle: 'bold', stroke: '#000', strokeThickness: 5, align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(500);
+
+        const defeatSub = this.add.text(
+            GAME_W / 2, GAME_H / 2,
+            isBossDeath ? '"You are never getting that Casio fx-570 back, Hammady~"' : 'The shower washed you clean. Your natural scent and aura faded to 0.',
+            {
+                fontSize: '13px', fontFamily: 'monospace', color: '#dddddd', align: 'center'
+            }
+        ).setOrigin(0.5).setScrollFactor(0).setDepth(500);
+
+        const retryText = isBossDeath ? '▶ RETRY BOSS FIGHT (TAP / ANY KEY) ◀' : '▶ RESPAWN & RECLAIM AURA (TAP / ANY KEY) ◀';
+
+        const retryBtn = this.add.text(GAME_W / 2, GAME_H / 2 + 55, retryText, {
+            fontSize: '15px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#1b5e20', padding: { x: 14, y: 7 }
+        }).setOrigin(0.5).setScrollFactor(0).setDepth(500).setInteractive();
+
+        this.tweens.add({
+            targets: retryBtn, alpha: 0.4, duration: 450, yoyo: true, repeat: -1
+        });
+
+        const restartGame = () => {
+            this.input.keyboard.off('keydown', restartGame);
+            this.input.off('pointerdown', restartGame);
+            this.scene.restart({ checkpoint: isBossDeath ? 'library' : 'start' });
+        };
+
+        retryBtn.on('pointerdown', restartGame);
+
+        this.time.delayedCall(400, () => {
+            this.input.keyboard.once('keydown', restartGame);
+            this.input.once('pointerdown', restartGame);
+        });
+    }
+
+    // ============================================================
+    //  MAIN GAME LOOP
+    // ============================================================
+    update(time, delta) {
+        if (!this.playerAlive || this.inCutscene) return;
+
+        const ts = this.touchState || {};
+
+        const left = this.cursors.left.isDown || this.wasd.A.isDown || ts.left;
+        const right = this.cursors.right.isDown || this.wasd.D.isDown || ts.right;
+        const jumpInput = Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
+            Phaser.Input.Keyboard.JustDown(this.wasd.W) ||
+            Phaser.Input.Keyboard.JustDown(this.spaceKey) || ts.jump;
+
+        if (!this.isDodging) {
+            if (left) {
+                this.player.setVelocityX(-PLAYER_SPEED);
+                this.facingRight = false;
+                this.player.setFlipX(true);
+            } else if (right) {
+                this.player.setVelocityX(PLAYER_SPEED);
+                this.facingRight = true;
+                this.player.setFlipX(false);
+            } else {
+                this.player.setVelocityX(0);
+            }
+        }
+
+        const onGround = this.player.body.touching.down || this.player.body.blocked.down;
+        if (onGround) {
+            this.canDoubleJump = true;
+        }
+
+        if (jumpInput) {
+            if (onGround) {
+                this.player.setVelocityY(JUMP_FORCE);
+                sfx.jump();
+            } else if (this.canDoubleJump) {
+                this.player.setVelocityY(JUMP_FORCE * 0.88);
+                sfx.jump();
+                this.canDoubleJump = false;
+            }
+            if (ts) ts.jump = false;
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.punchKey) ||
+            Phaser.Input.Keyboard.JustDown(this.punchKey2) || ts.punch) {
+            this.doPunch();
+            if (ts) ts.punch = false;
+        }
+
+        if (Phaser.Input.Keyboard.JustDown(this.parryKey) ||
+            Phaser.Input.Keyboard.JustDown(this.parryKey2) || ts.parry) {
+            this.doParryOrDodge();
+            if (ts) ts.parry = false;
+        }
+
+        if (this.punchCooldown > 0) this.punchCooldown--;
+        if (this.parryCooldown > 0) this.parryCooldown--;
+        if (this.stunTimer > 0) this.stunTimer--;
+        if (this.invincibleTimer > 0) this.invincibleTimer--;
+
+        if (this.isDodging) {
+            this.dodgeTimer--;
+            if (this.dodgeTimer <= 0) {
+                this.isDodging = false;
+                this.player.setAlpha(1);
+            }
+        }
+
+        if (this.player.y > this.mapHeight - 10) {
+            this.takeDamage(15);
+            this.player.setPosition(Math.max(100, this.player.x - 120), this.mapHeight - 140);
+            this.player.setVelocity(0, 0);
+        }
+
+        const px = this.player.x;
+        const py = this.player.y;
+        if (px < 800) {
+            this.locLabel.setText('📍 PINTU GERBANG (SM ALL SAINTS)');
+        } else if (px < 1900) {
+            this.locLabel.setText('🏛️ LALUAN BERBUMBUNG & DEWAN ALL SAINTS');
+        } else if (px < 3250) {
+            this.locLabel.setText('🏫 BLOK KELAS FORM 5');
+        } else if (px < 4420) {
+            this.locLabel.setText('⬆️ TANGGA BLOK UTAMA (CLIMBING TO 2ND FLOOR)');
+        } else {
+            this.locLabel.setText('📚 PERPUSTAKAAN SM ALL SAINTS (2ND FLOOR)');
+        }
+
+        this.enemies.getChildren().forEach((e) => this.updateEnemyAI(e));
+
+        if (!this.bossTriggered && px > 5200 && py < 400) {
+            this.triggerBossCutscene();
+        }
+
+        this.updateBossAI();
+    }
+}
+
+// ============================================================
+//  VICTORY SCENE
+// ============================================================
+class VictoryScene extends Phaser.Scene {
+    constructor() { super('Victory'); }
+
+    create() {
+        const cx = GAME_W / 2, cy = GAME_H / 2;
+
+        this.add.rectangle(cx, cy, GAME_W, GAME_H, 0x090912);
+
+        this.add.text(cx, cy - 110, '🎉 MISSION ACCOMPLISHED! 🎉', {
+            fontSize: '32px', fontFamily: 'monospace', color: '#f5c542',
+            fontStyle: 'bold', stroke: '#000', strokeThickness: 5
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy - 35,
+            'Hammady successfully pacified his toxic yandere ex Hanis,\n' +
+            'protected his aura from the showers,\n' +
+            'and reclaimed his Casio fx-570 for SPM trials.\n\n' +
+            '"Not as painful as Delson."', {
+            fontSize: '15px', fontFamily: 'monospace', color: '#e0e0e0',
+            align: 'center', lineSpacing: 6
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy + 65, 'SM ALL SAINTS, KOTA KINABALU\nSPM TRIALS SURVIVED', {
+            fontSize: '13px', fontFamily: 'monospace', color: '#4fc3f7',
+            align: 'center', lineSpacing: 4
+        }).setOrigin(0.5);
+
+        const replay = this.add.text(cx, cy + 140, '▶ PLAY AGAIN (TAP / ANY KEY) ◀', {
+            fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#1b5e20', padding: { x: 12, y: 6 }
+        }).setOrigin(0.5);
+
+        this.tweens.add({
+            targets: replay, alpha: 0.4, duration: 500, yoyo: true, repeat: -1
+        });
+
+        const restart = () => this.scene.start('Game');
+        this.time.delayedCall(400, () => {
+            this.input.keyboard.on('keydown', restart);
+            this.input.on('pointerdown', restart);
+        });
+    }
+}
+
+// ============================================================
+//  PHASER GAME CONFIG
+// ============================================================
+const config = {
+    type: Phaser.AUTO,
+    width: GAME_W,
+    height: GAME_H,
+    parent: 'game-container',
+    pixelArt: true,
+    physics: {
+        default: 'arcade',
+        arcade: {
+            gravity: { y: GRAVITY },
+            debug: false
+        }
+    },
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: [BootScene, TitleScene, GameScene, VictoryScene]
+};
+
+const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
