@@ -2,19 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#080811">
+<meta property="og:title" content="Hammady's Evening Run — SM All Saints">
+<meta property="og:description" content="Can Hammady defeat his toxic yandere ex Hanis, dodge the showers to keep his aura intact, and retrieve his SPM Casio calculator? Play now in browser!">
+<meta property="og:type" content="website">
 <title>Hammady's Evening Run — SM All Saints</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body {
+html, body {
+    width: 100%;
+    height: 100%;
     background: #080811;
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 100vh;
     overflow: hidden;
     font-family: 'Courier New', monospace;
     touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 #game-container {
     position: relative;
@@ -22,12 +33,51 @@ body {
     border: 2px solid #2a2845;
     border-radius: 6px;
     overflow: hidden;
+    max-width: 100vw;
+    max-height: 100vh;
 }
 canvas { display: block; image-rendering: pixelated; }
+
+/* Mobile Portrait Orientation Prompt */
+#rotate-notice {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(9, 9, 18, 0.98);
+    z-index: 999999;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 24px;
+    color: #f5c542;
+    font-family: 'Courier New', monospace;
+}
+#rotate-notice .icon {
+    font-size: 56px;
+    animation: rotatePhone 2.2s infinite ease-in-out;
+    margin-bottom: 18px;
+}
+@keyframes rotatePhone {
+    0%, 20% { transform: rotate(0deg); }
+    50%, 70% { transform: rotate(90deg); }
+    100% { transform: rotate(0deg); }
+}
+@media screen and (orientation: portrait) and (max-width: 900px) {
+    #rotate-notice { display: flex !important; }
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 </head>
 <body>
+<div id="rotate-notice">
+    <div class="icon">📱</div>
+    <h2 style="font-size: 22px; margin-bottom: 10px; color: #ffeb3b; font-weight: bold;">ROTATE PHONE TO LANDSCAPE</h2>
+    <p style="font-size: 14px; color: #e0e0e0; max-width: 320px; line-height: 1.5; margin-bottom: 8px;">
+        Turn your phone sideways to play <strong>Hammady's Evening Run</strong>!
+    </p>
+    <p style="font-size: 12px; color: #81d4fa;">(If auto-rotate is locked, please unlock it in your phone quick settings)</p>
+</div>
 <div id="game-container"></div>
 <script>
 // ============================================================
@@ -85,8 +135,23 @@ class SoundFX {
     rulerSmack() { this.init(); this.playTone(180, 'square', 0.25, 40, 0.3); }
     dashWhoosh() { this.init(); this.playTone(120, 'sawtooth', 0.3, 300, 0.2); }
     chalkThrow() { this.init(); this.playTone(400, 'sine', 0.2, 150, 0.08); }
+    lifeGrip() {
+        this.init();
+        this.playTone(320, 'sine', 0.5, 1400, 0.25);
+        setTimeout(() => this.playTone(640, 'triangle', 0.45, 1800, 0.2), 70);
+        setTimeout(() => this.playTone(960, 'sine', 0.4, 2200, 0.15), 140);
+    }
+    earthshatter() {
+        this.init();
+        this.playTone(65, 'sawtooth', 0.9, 15, 0.5);
+        this.playTone(130, 'square', 0.7, 25, 0.4);
+        setTimeout(() => this.playTone(55, 'sawtooth', 0.8, 12, 0.45), 70);
+    }
 }
 const sfx = new SoundFX();
+// Global Touch Audio Unlock (Required for iOS / Android / WhatsApp Webviews)
+window.addEventListener('touchstart', () => sfx.init(), { once: true, passive: true });
+window.addEventListener('pointerdown', () => sfx.init(), { once: true, passive: true });
 
 // Banter lines after defeating Showers
 const BANTER = [
@@ -210,6 +275,42 @@ class BootScene extends Phaser.Scene {
             }
         }
         g.generateTexture('bookshelf', 84, 130);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawJackedKnightDelson(g, 'slam');
+        g.generateTexture('delson_slam', 100, 120);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        this.drawJackedKnightDelson(g, 'idle');
+        g.generateTexture('delson_idle', 100, 120);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0xff69b4, 0.95);
+        g.fillEllipse(8, 8, 12, 6);
+        g.fillStyle(0xffffff, 0.9);
+        g.fillEllipse(8, 8, 6, 3);
+        g.generateTexture('lifeweaver_petal', 16, 16);
+        g.destroy();
+
+        g = this.make.graphics({ add: false });
+        g.fillStyle(0x1a1a24);
+        g.fillRoundedRect(0, 0, 20, 30, 3);
+        g.fillStyle(0x8d99ae);
+        g.fillRect(3, 4, 14, 8);
+        g.fillStyle(0x0f380f);
+        g.fillRect(4, 5, 12, 6);
+        g.fillStyle(0x9bbc0f);
+        g.fillRect(5, 7, 10, 2);
+        g.fillStyle(0x4a4e69);
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 3; c++) {
+                g.fillRect(3 + c * 5, 14 + r * 3.5, 4, 2.5);
+            }
+        }
+        g.generateTexture('casio_fx570', 20, 30);
         g.destroy();
     }
 
@@ -572,6 +673,193 @@ class BootScene extends Phaser.Scene {
         g.fillRect(15, 59, 7, 3);
         g.fillRect(26, 59, 7, 3);
     }
+
+    drawJackedKnightDelson(g, pose) {
+        if (pose === 'slam') {
+            // Lifeweaver Petal Bubble Aura
+            g.fillStyle(0xff69b4, 0.3);
+            g.fillCircle(50, 60, 48);
+            g.lineStyle(2, 0xff1493, 0.85);
+            g.strokeCircle(50, 60, 48);
+
+            // Giant Warhammer Shaft (Raised overhead diagonally)
+            g.fillStyle(0x3e2723);
+            g.fillRect(52, 4, 8, 48);
+            g.fillStyle(0x8d6e63);
+            g.fillRect(54, 4, 4, 48);
+
+            // Giant Warhammer Head (Overhead)
+            g.fillStyle(0x2b2d42);
+            g.fillRoundedRect(30, 2, 52, 26, 4);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(34, 6, 44, 18);
+            g.lineStyle(2, 0xf5c542, 1);
+            g.strokeRoundedRect(30, 2, 52, 26, 4);
+            // Crushing Face
+            g.fillStyle(0xedf2f7);
+            g.fillRect(30, 4, 5, 22);
+
+            // Rocket Thrusters firing down from hammer head
+            g.fillStyle(0x1a1a24);
+            g.fillRect(74, 6, 8, 18);
+            // Thruster Flames
+            g.fillStyle(0xff1744);
+            g.fillRect(82, 8, 12, 14);
+            g.fillStyle(0xffd600);
+            g.fillRect(82, 11, 8, 8);
+            g.fillStyle(0xffffff);
+            g.fillRect(82, 13, 4, 4);
+
+            // Massive Jacked Armored Arms gripping hammer
+            g.fillStyle(0x2b2d42);
+            g.fillRect(40, 28, 14, 22);
+            g.fillRect(56, 28, 14, 22);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(43, 31, 8, 16);
+            g.fillRect(59, 31, 8, 16);
+            // Spiked Gauntlets
+            g.fillStyle(0xf5c542);
+            g.fillRect(46, 24, 18, 8);
+
+            // Knight Greathelm
+            g.fillStyle(0x1e202c);
+            g.fillRect(42, 44, 22, 20);
+            g.fillStyle(0x3f445c);
+            g.fillRect(44, 46, 18, 16);
+            // Visor Slit
+            g.fillStyle(0x00e5ff);
+            g.fillRect(46, 54, 14, 3);
+            g.fillStyle(0xffffff);
+            g.fillRect(50, 54, 6, 2);
+
+            // Giant Spiked Pauldrons (Shoulders)
+            g.fillStyle(0x2b2d42);
+            g.fillRoundedRect(22, 52, 24, 22, 4);
+            g.fillRoundedRect(60, 52, 24, 22, 4);
+            g.lineStyle(2, 0xf5c542, 1);
+            g.strokeRoundedRect(22, 52, 24, 22, 4);
+            g.strokeRoundedRect(60, 52, 24, 22, 4);
+            // Spikes
+            g.fillStyle(0xdfe3ee);
+            g.fillRect(19, 56, 4, 8);
+            g.fillRect(83, 56, 4, 8);
+
+            // Muscular Chestplate
+            g.fillStyle(0x2b2d42);
+            g.fillRect(34, 64, 38, 28);
+            g.fillStyle(0x4a4e69);
+            g.fillRect(38, 67, 30, 22);
+            g.lineStyle(2, 0xf5c542, 0.9);
+            g.strokeRect(36, 66, 34, 24);
+
+            // Belt & Tassets
+            g.fillStyle(0x1a1a24);
+            g.fillRect(36, 92, 34, 8);
+            g.fillStyle(0xf5c542);
+            g.fillRect(49, 93, 8, 6);
+
+            // Greaves & Sabatons
+            g.fillStyle(0x2b2d42);
+            g.fillRect(36, 100, 14, 18);
+            g.fillRect(56, 100, 14, 18);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(39, 103, 8, 12);
+            g.fillRect(59, 103, 8, 12);
+        } else {
+            // Victorious Jacked Stance
+            // Knight Greathelm
+            g.fillStyle(0x1e202c);
+            g.fillRect(40, 12, 26, 24);
+            g.fillStyle(0x3f445c);
+            g.fillRect(43, 14, 20, 20);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(46, 16, 14, 10);
+            // Crest
+            g.fillStyle(0xf5c542);
+            g.fillRect(50, 6, 6, 8);
+            // Visor
+            g.fillStyle(0x00e5ff);
+            g.fillRect(44, 25, 18, 4);
+            g.fillStyle(0xffffff);
+            g.fillRect(48, 26, 10, 2);
+
+            // Giant Spiked Pauldrons (Shoulders flare to 76px wide!)
+            g.fillStyle(0x2b2d42);
+            g.fillRoundedRect(16, 26, 28, 26, 5);
+            g.fillRoundedRect(62, 26, 28, 26, 5);
+            g.lineStyle(2, 0xf5c542, 1);
+            g.strokeRoundedRect(16, 26, 28, 26, 5);
+            g.strokeRoundedRect(62, 26, 28, 26, 5);
+            // Spikes
+            g.fillStyle(0xdfe3ee);
+            g.fillRect(12, 32, 5, 8);
+            g.fillRect(89, 32, 5, 8);
+
+            // Muscular Torso & Chestplate
+            g.fillStyle(0x2b2d42);
+            g.fillRect(32, 36, 42, 34);
+            g.fillStyle(0x4a4e69);
+            g.fillRect(36, 39, 34, 28);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(38, 42, 13, 12);
+            g.fillRect(55, 42, 13, 12);
+            g.lineStyle(2, 0xf5c542, 1);
+            g.strokeRect(34, 38, 38, 30);
+
+            // Biceps & Arms
+            g.fillStyle(0x2b2d42);
+            g.fillRect(20, 50, 14, 26);
+            g.fillRect(72, 50, 14, 26);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(22, 53, 10, 18);
+            g.fillRect(74, 53, 10, 18);
+            // Gauntlets
+            g.fillStyle(0xf5c542);
+            g.fillRect(19, 74, 16, 10);
+            g.fillRect(71, 74, 16, 10);
+
+            // Belt & Tassets
+            g.fillStyle(0x1a1a24);
+            g.fillRect(32, 70, 42, 12);
+            g.fillStyle(0xf5c542);
+            g.fillRect(48, 72, 10, 8);
+
+            // Jacked Armored Legs
+            g.fillStyle(0x2b2d42);
+            g.fillRect(30, 82, 18, 36);
+            g.fillRect(58, 82, 18, 36);
+            g.fillStyle(0x4a4e69);
+            g.fillRect(33, 85, 12, 28);
+            g.fillRect(61, 85, 12, 28);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(35, 88, 8, 14);
+            g.fillRect(63, 88, 8, 14);
+            // Spiked Knee Cops
+            g.fillStyle(0xf5c542);
+            g.fillRect(32, 92, 14, 6);
+            g.fillRect(60, 92, 14, 6);
+            // Heavy Sabatons
+            g.fillStyle(0x1e202c);
+            g.fillRect(26, 114, 24, 6);
+            g.fillRect(56, 114, 24, 6);
+
+            // Giant Warhammer resting beside him
+            g.fillStyle(0x3e2723);
+            g.fillRect(84, 18, 8, 98);
+            g.fillStyle(0x8d6e63);
+            g.fillRect(86, 18, 4, 98);
+            // Hammer Head on floor
+            g.fillStyle(0x2b2d42);
+            g.fillRoundedRect(72, 96, 26, 24, 3);
+            g.fillStyle(0x8d99ae);
+            g.fillRect(75, 99, 20, 18);
+            g.lineStyle(2, 0xf5c542, 1);
+            g.strokeRoundedRect(72, 96, 26, 24, 3);
+            // Thrusters
+            g.fillStyle(0x1a1a24);
+            g.fillRect(96, 101, 4, 14);
+        }
+    }
 }
 
 // ============================================================
@@ -668,6 +956,7 @@ class GameScene extends Phaser.Scene {
         this.dialogPrompt = null;
         this.dialogQueue = [];
         this.dialogCallback = null;
+        this.activeAdvanceHandler = null;
         this.inCutscene = false;
         this.firstShowerSeen = (this.spawnCheckpoint === 'library');
         this.bossTriggered = false;
@@ -1080,6 +1369,21 @@ class GameScene extends Phaser.Scene {
             backgroundColor: '#000000bb', padding: { x: 8, y: 3 }
         }).setOrigin(0.5, 1);
         this.hud.add(this.locLabel);
+
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (this.sys.game.device.input.touch) || (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+        this.showTouchControls = isTouchDevice;
+
+        this.touchToggleBtn = this.add.text(GAME_W - 16, 20, isTouchDevice ? '📱 CONTROLS: ON' : '📱 CONTROLS', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#eceff1',
+            backgroundColor: '#37474f', padding: { x: 7, y: 4 }
+        }).setOrigin(1, 0).setInteractive();
+
+        this.touchToggleBtn.on('pointerdown', () => {
+            this.showTouchControls = !this.showTouchControls;
+            if (this.touchCtrl) this.touchCtrl.setVisible(this.showTouchControls);
+            this.touchToggleBtn.setText(this.showTouchControls ? '📱 CONTROLS: ON' : '📱 CONTROLS: OFF');
+        });
+        this.hud.add(this.touchToggleBtn);
     }
 
     updatePlayerHP() {
@@ -1098,51 +1402,76 @@ class GameScene extends Phaser.Scene {
     }
 
     createTouchControls() {
-        if (!this.sys.game.device.input.touch) return;
+        const isTouch = ('ontouchstart' in window) ||
+                        (navigator.maxTouchPoints > 0) ||
+                        (this.sys.game.device.input.touch) ||
+                        /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-        this.touchCtrl = this.add.container(0, 0).setScrollFactor(0).setDepth(299).setAlpha(0.65);
-
-        const leftBtn = this.add.circle(70, GAME_H - 70, 32, 0xffffff, 0.25).setInteractive();
-        this.add.text(70, GAME_H - 70, '◀', { fontSize: '26px' }).setOrigin(0.5);
-        this.touchCtrl.add(leftBtn);
-
-        const rightBtn = this.add.circle(150, GAME_H - 70, 32, 0xffffff, 0.25).setInteractive();
-        this.add.text(150, GAME_H - 70, '▶', { fontSize: '26px' }).setOrigin(0.5);
-        this.touchCtrl.add(rightBtn);
-
-        const jumpBtn = this.add.circle(110, GAME_H - 145, 30, 0x4fc3f7, 0.3).setInteractive();
-        this.add.text(110, GAME_H - 145, 'JUMP', { fontSize: '11px', fontStyle: 'bold' }).setOrigin(0.5);
-        this.touchCtrl.add(jumpBtn);
-
-        const punchBtn = this.add.circle(GAME_W - 75, GAME_H - 75, 36, 0xff5252, 0.35).setInteractive();
-        this.add.text(GAME_W - 75, GAME_H - 75, '👊 PUNCH\n(Z)', { fontSize: '10px', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
-        this.touchCtrl.add(punchBtn);
-
-        const parryBtn = this.add.circle(GAME_W - 165, GAME_H - 75, 36, 0xffeb3b, 0.35).setInteractive();
-        this.add.text(GAME_W - 165, GAME_H - 75, '🛡️ PARRY\n/ DODGE (X)', { fontSize: '9px', fontStyle: 'bold', align: 'center' }).setOrigin(0.5);
-        this.touchCtrl.add(parryBtn);
-
+        this.touchCtrl = this.add.container(0, 0).setScrollFactor(0).setDepth(299);
+        this.touchCtrl.setVisible(this.showTouchControls !== undefined ? this.showTouchControls : isTouch);
         this.touchState = { left: false, right: false, jump: false, punch: false, parry: false };
 
-        leftBtn.on('pointerdown', () => this.touchState.left = true);
-        leftBtn.on('pointerup', () => this.touchState.left = false);
-        leftBtn.on('pointerout', () => this.touchState.left = false);
+        // Helper to construct interactive arcade touch button with fixed screen position
+        const makeBtn = (x, y, radius, color, label, fontSize = '22px') => {
+            const circle = this.add.circle(x, y, radius, color, 0.45).setInteractive();
+            const ring = this.add.circle(x, y, radius).setStrokeStyle(2, 0xffffff, 0.4);
+            const txt = this.add.text(x, y, label, {
+                fontSize: fontSize,
+                fontFamily: 'monospace',
+                fontStyle: 'bold',
+                color: '#ffffff',
+                align: 'center'
+            }).setOrigin(0.5);
+            this.touchCtrl.add([circle, ring, txt]);
+            return { circle, ring, txt };
+        };
 
-        rightBtn.on('pointerdown', () => this.touchState.right = true);
-        rightBtn.on('pointerup', () => this.touchState.right = false);
-        rightBtn.on('pointerout', () => this.touchState.right = false);
+        // Left Thumb: Movement (D-Pad)
+        const leftBtn = makeBtn(75, GAME_H - 75, 40, 0x2e3440, '◀', '26px');
+        const rightBtn = makeBtn(175, GAME_H - 75, 40, 0x2e3440, '▶', '26px');
 
-        jumpBtn.on('pointerdown', () => this.touchState.jump = true);
-        jumpBtn.on('pointerup', () => this.touchState.jump = false);
-        jumpBtn.on('pointerout', () => this.touchState.jump = false);
+        // Right Thumb: Action Diamond
+        // JUMP (Top Right - cyan)
+        const jumpBtn = makeBtn(GAME_W - 85, GAME_H - 165, 38, 0x0288d1, '⬆\nJUMP', '11px');
+        // PUNCH (Bottom Right - primary attack, red)
+        const punchBtn = makeBtn(GAME_W - 75, GAME_H - 75, 42, 0xd32f2f, '👊\nPUNCH', '12px');
+        // PARRY / DODGE (Left of punch - gold)
+        const parryBtn = makeBtn(GAME_W - 175, GAME_H - 85, 38, 0xfbc02d, '🛡️\nPARRY', '11px');
 
-        punchBtn.on('pointerdown', () => this.touchState.punch = true);
-        punchBtn.on('pointerup', () => this.touchState.punch = false);
-        punchBtn.on('pointerout', () => this.touchState.punch = false);
+        const bindHold = (btnObj, keyName) => {
+            btnObj.circle.on('pointerdown', () => {
+                this.touchState[keyName] = true;
+                btnObj.circle.setAlpha(0.85);
+                btnObj.circle.setScale(0.92);
+            });
+            const release = () => {
+                this.touchState[keyName] = false;
+                btnObj.circle.setAlpha(0.45);
+                btnObj.circle.setScale(1.0);
+            };
+            btnObj.circle.on('pointerup', release);
+            btnObj.circle.on('pointerout', release);
+        };
 
-        parryBtn.on('pointerdown', () => this.touchState.parry = true);
-        parryBtn.on('pointerup', () => this.touchState.parry = false);
-        parryBtn.on('pointerout', () => this.touchState.parry = false);
+        const bindTap = (btnObj, keyName) => {
+            btnObj.circle.on('pointerdown', () => {
+                this.touchState[keyName] = true;
+                btnObj.circle.setAlpha(0.85);
+                btnObj.circle.setScale(0.92);
+            });
+            const release = () => {
+                btnObj.circle.setAlpha(0.45);
+                btnObj.circle.setScale(1.0);
+            };
+            btnObj.circle.on('pointerup', release);
+            btnObj.circle.on('pointerout', release);
+        };
+
+        bindHold(leftBtn, 'left');
+        bindHold(rightBtn, 'right');
+        bindTap(jumpBtn, 'jump');
+        bindTap(punchBtn, 'punch');
+        bindTap(parryBtn, 'parry');
     }
 
     // ============================================================
@@ -1153,7 +1482,18 @@ class GameScene extends Phaser.Scene {
         this.dialogCallback = onComplete || null;
         this.inCutscene = true;
         this.player.setVelocity(0, 0);
+        if (this.touchCtrl) this.touchCtrl.setVisible(false);
         this.showNextDialogue();
+    }
+
+    cleanupDialogueInput() {
+        if (this.activeAdvanceHandler) {
+            this.input.keyboard.off('keydown-SPACE', this.activeAdvanceHandler);
+            this.input.keyboard.off('keydown-ENTER', this.activeAdvanceHandler);
+            this.input.keyboard.off('keydown-Z', this.activeAdvanceHandler);
+            this.input.off('pointerdown', this.activeAdvanceHandler);
+            this.activeAdvanceHandler = null;
+        }
     }
 
     showNextDialogue() {
@@ -1161,6 +1501,8 @@ class GameScene extends Phaser.Scene {
             this.hideDialogue();
             return;
         }
+
+        this.cleanupDialogueInput();
 
         const line = this.dialogQueue.shift();
 
@@ -1209,22 +1551,28 @@ class GameScene extends Phaser.Scene {
 
         const advance = () => {
             if (charIdx < fullText.length) {
+                // If text is still typing, finish typing immediately on input
                 if (this.typewriterTimer) this.typewriterTimer.destroy();
                 charIdx = fullText.length;
                 this.dialogText.setText(fullText);
                 this.dialogPrompt.setVisible(true);
                 return;
             }
-            this.input.keyboard.off('keydown-SPACE', advance);
-            this.input.off('pointerdown', advance);
+            // Once full text is visible, clean up and progress to next line
+            this.cleanupDialogueInput();
             this.showNextDialogue();
         };
 
-        this.input.keyboard.once('keydown-SPACE', advance);
-        this.input.once('pointerdown', advance);
+        this.activeAdvanceHandler = advance;
+        // Keep ALL inputs active at all times (Space, Enter, Z, Tap/Click)
+        this.input.keyboard.on('keydown-SPACE', advance);
+        this.input.keyboard.on('keydown-ENTER', advance);
+        this.input.keyboard.on('keydown-Z', advance);
+        this.input.on('pointerdown', advance);
     }
 
     hideDialogue() {
+        this.cleanupDialogueInput();
         if (this.dialogBox) {
             this.dialogBox.clear();
             this.dialogText.setText('');
@@ -1232,6 +1580,9 @@ class GameScene extends Phaser.Scene {
             this.dialogPrompt.setVisible(false);
         }
         this.inCutscene = false;
+        if (this.touchCtrl) {
+            this.touchCtrl.setVisible(this.showTouchControls !== undefined ? this.showTouchControls : true);
+        }
         if (this.dialogCallback) {
             const cb = this.dialogCallback;
             this.dialogCallback = null;
@@ -1906,6 +2257,8 @@ class GameScene extends Phaser.Scene {
 
     defeatBoss() {
         this.bossDefeated = true;
+        this.inCutscene = true;
+        this.player.setVelocity(0, 0);
         this.removeTelegraphUI(this.boss);
 
         if (this.activeRuler && this.activeRuler.active) {
@@ -1913,23 +2266,238 @@ class GameScene extends Phaser.Scene {
             this.activeRuler = null;
         }
 
-        this.cameras.main.flash(600, 255, 255, 255);
-        this.cameras.main.shake(600, 0.02);
+        this.bossProjectiles.clear(true, true);
+        this.showerProjectiles.clear(true, true);
 
-        this.boss.destroy();
+        // Hide Boss HP HUD
         this.bossHpBg.setVisible(false);
         this.bossHpBar.setVisible(false);
         this.bossTitle.setVisible(false);
-        this.bossProjectiles.clear(true, true);
+        if (this.touchCtrl) this.touchCtrl.setVisible(false);
 
-        this.time.delayedCall(800, () => {
+        // Position boss and player cleanly in the library arena
+        this.boss.setVelocity(0, 0);
+        this.boss.body.allowGravity = false;
+        this.boss.setTint(0xff7777); // Staggered & exhausted
+
+        if (this.player.x > this.boss.x) {
+            this.player.setX(this.boss.x - 220);
+        } else if (this.boss.x - this.player.x < 180) {
+            this.player.setX(this.boss.x - 200);
+        }
+        this.player.setFlipX(false);
+        this.facingRight = true;
+        this.boss.setFlipX(true);
+
+        this.cameras.main.pan(this.boss.x - 90, this.boss.y - 20, 600, 'Power2');
+
+        // Part 1: Dialogue leading up to the forbidden pull
+        this.time.delayedCall(400, () => {
             this.showDialogue([
-                { speaker: 'HAMMADY', text: '*quickly grabs Casio fx-570 calculator and formula book from study desk*' },
-                { speaker: 'HAMMADY', text: 'GOT THEM! My calculator, formula book, and revision notes!' },
-                { speaker: 'HAMMADY', text: 'I survived our toxic relationship, Hanis... and I will survive the SPM trials tomorrow!' },
-                { speaker: 'HAMMADY', text: "...Not as painful as Delson." },
+                { speaker: 'HANIS ("SWSNBN")', text: 'H-Hammady... *pant* *pant*... You think you can defeat me and just leave?!' },
+                { speaker: 'HANIS ("SWSNBN")', text: "We are destined to be together forever! If you won't take Form 6 with me, NO ONE WILL!!" },
+                { speaker: 'HAMMADY', text: "I'm sorry Hanis. You left me no choice. I have to use my forbidden ability..." },
+                { speaker: 'HAMMADY', text: "LIFEWEAVER PULL!!!!" }
             ], () => {
-                this.scene.start('Victory');
+                this.executeLifeweaverPullCutscene();
+            });
+        });
+    }
+
+    executeLifeweaverPullCutscene() {
+        this.inCutscene = true;
+        this.player.setVelocity(0, 0);
+        if (this.touchCtrl) this.touchCtrl.setVisible(false);
+
+        // 1. Hammady poses with arm extended upwards
+        sfx.lifeGrip();
+        this.player.setTexture('player_punch');
+        this.cameras.main.flash(450, 255, 105, 180); // Pink Life Grip flash
+
+        // 2. Lifeweaver Pink Energy Tether shooting into the heavens
+        const beam = this.add.graphics().setDepth(350);
+        const skyX = this.player.x + 80;
+        const skyY = -120;
+        
+        const beamTimer = this.time.addEvent({
+            delay: 16,
+            repeat: 30,
+            callback: () => {
+                beam.clear();
+                const startX = this.player.x + 15;
+                const startY = this.player.y - 18;
+                // Pulsing lotus pink energy beam
+                beam.lineStyle(8, 0xff1493, 0.9);
+                beam.lineBetween(startX, startY, skyX, skyY);
+                beam.lineStyle(3, 0xffffff, 1);
+                beam.lineBetween(startX, startY, skyX, skyY);
+            }
+        });
+
+        // Petal particles erupting upwards
+        const petals = this.add.particles(this.player.x + 20, this.player.y - 18, 'lifeweaver_petal', {
+            speed: { min: 250, max: 550 },
+            angle: { min: -105, max: -65 },
+            lifespan: 1100,
+            scale: { start: 1.3, end: 0.3 },
+            alpha: { start: 1, end: 0 },
+            quantity: 4,
+            frequency: 35
+        });
+
+        // 3. Knight descends from the heavens
+        const dropX = this.boss.x - 70;
+        const groundY = this.boss.y; // Floor level in library
+
+        const delson = this.physics.add.sprite(dropX, -140, 'delson_slam')
+            .setDepth(360)
+            .setFlipX(false);
+        delson.body.setAllowGravity(false);
+
+        // Pink Lifeweaver protective bubble surrounding Delson
+        const bubbleG = this.add.graphics().setDepth(359);
+
+        // Voice line banner in sky
+        const ultBanner = this.add.text(dropX, -70, '📢 "HAMMER... DOOOOWWWNNN!!!"', {
+            fontSize: '18px',
+            fontFamily: 'monospace',
+            color: '#ffea00',
+            fontStyle: 'bold',
+            stroke: '#000000',
+            strokeThickness: 5
+        }).setOrigin(0.5).setDepth(370);
+
+        this.tweens.add({
+            targets: delson,
+            y: groundY - 28,
+            duration: 650,
+            ease: 'Power3.easeIn',
+            onUpdate: () => {
+                bubbleG.clear();
+                bubbleG.fillStyle(0xff69b4, 0.28);
+                bubbleG.fillCircle(delson.x, delson.y, 56);
+                bubbleG.lineStyle(3, 0xff1493, 0.85);
+                bubbleG.strokeCircle(delson.x, delson.y, 56);
+                ultBanner.setPosition(delson.x, delson.y - 65);
+            },
+            onComplete: () => {
+                beam.destroy();
+                beamTimer.destroy();
+                petals.destroy();
+                bubbleG.destroy();
+                ultBanner.destroy();
+
+                this.triggerDelsonEarthshatterImpact(delson, groundY);
+            }
+        });
+    }
+
+    triggerDelsonEarthshatterImpact(delson, groundY) {
+        // 1. Switch Delson to standing jacked knight pose
+        delson.setTexture('delson_idle');
+        delson.setPosition(delson.x, groundY - 26);
+
+        // 2. Sound effect, screen shake, and ground flash
+        sfx.earthshatter();
+        this.cameras.main.shake(1200, 0.045);
+        this.cameras.main.flash(350, 255, 235, 59);
+
+        // 3. Fiery shockwave spikes ripping across the library floor towards Hanis
+        const shockG = this.add.graphics().setDepth(355);
+        let waveDist = 0;
+        const waveTimer = this.time.addEvent({
+            delay: 16,
+            repeat: 22,
+            callback: () => {
+                waveDist += 16;
+                shockG.clear();
+                for (let ox = 0; ox < waveDist; ox += 18) {
+                    const wx = delson.x + ox;
+                    const spikeH = Math.max(12, 50 - ox * 0.12);
+                    shockG.fillStyle(0xffab00, 0.95);
+                    shockG.fillTriangle(wx, groundY + 30, wx + 9, groundY + 30 - spikeH, wx + 18, groundY + 30);
+                    shockG.fillStyle(0xffffff, 0.95);
+                    shockG.fillTriangle(wx + 4, groundY + 30, wx + 9, groundY + 30 - spikeH * 0.65, wx + 14, groundY + 30);
+                }
+            }
+        });
+
+        // 4. Hanis gets BLASTED into the stratosphere!
+        this.boss.body.setAllowGravity(false);
+        this.boss.setTint(0xffffff);
+
+        const blastText = this.add.text(this.boss.x, this.boss.y - 45, '💥 SHATTERED!! 💥\n"HAMMADYYYYYY—!!"', {
+            fontSize: '15px',
+            fontFamily: 'monospace',
+            color: '#ff1744',
+            fontStyle: 'bold',
+            align: 'center',
+            stroke: '#000',
+            strokeThickness: 5
+        }).setOrigin(0.5).setDepth(370);
+
+        this.tweens.add({
+            targets: this.boss,
+            x: this.boss.x + 600,
+            y: -350,
+            angle: 1080,
+            scale: 0.2,
+            alpha: 0,
+            duration: 950,
+            ease: 'Power2.easeOut',
+            onComplete: () => {
+                this.boss.destroy();
+                blastText.destroy();
+            }
+        });
+
+        this.tweens.add({
+            targets: blastText,
+            y: blastText.y - 120,
+            alpha: 0,
+            duration: 850
+        });
+
+        // 5. Casio fx-570 Calculator appears on the library study desk!
+        const calc = this.add.image(delson.x - 90, groundY + 14, 'casio_fx570')
+            .setDepth(340);
+        this.tweens.add({
+            targets: calc,
+            y: groundY + 6,
+            duration: 550,
+            yoyo: true,
+            repeat: -1
+        });
+        const calcSparkle = this.add.text(calc.x, calc.y - 24, '✨ CASIO fx-570 ✨', {
+            fontSize: '10px',
+            fontFamily: 'monospace',
+            color: '#4fc3f7',
+            fontStyle: 'bold',
+            backgroundColor: '#000000bb',
+            padding: { x: 4, y: 2 }
+        }).setOrigin(0.5).setDepth(345);
+
+        // 6. Dialogue with Jacked Knight Delson!
+        this.time.delayedCall(1200, () => {
+            this.player.setTexture('player_idle');
+            delson.setFlipX(true); // Delson faces Hammady
+
+            this.showDialogue([
+                { speaker: 'DELSON (JACKED KNIGHT)', text: 'BRO?!?! WHAT THE ACTUAL HECK WAS THAT?!' },
+                { speaker: 'DELSON (JACKED KNIGHT)', text: 'I WAS IN THE MIDDLE OF ULTING!! I HAD A 5-MAN EARTHSHATTER LINED UP IN RANKED AND YOU LIFEWEAVER PULLED ME?!' },
+                { speaker: 'DELSON (JACKED KNIGHT)', text: 'WHY DID YOU LIFEWEAVER PULL ME ACROSS UNIVERSES INTO SM ALL SAINTS?!' },
+                { speaker: 'HAMMADY', text: "Bro, my toxic ex Hanis cornered me in the 2nd floor library! She was swinging a giant 1-meter teacher ruler and wouldn't let me get my Casio fx-570 calculator for SPM trials tomorrow!" },
+                { speaker: 'DELSON (JACKED KNIGHT)', text: '...YOU PULLED ME OUT OF OVERWATCH OVER A CASIO FX-570 CALCULATOR?!' },
+                { speaker: 'DELSON (JACKED KNIGHT)', text: '...Wait, she had a giant wooden ruler?! Actually never mind, she 100% deserved that hammer shatter.' },
+                { speaker: 'DELSON (JACKED KNIGHT)', text: 'Grab your calculator and go pass your Add Maths. AND SWITCH OFF LIFEWEAVER, BRO.' },
+                { speaker: 'HAMMADY', text: '*grabs Casio fx-570 calculator and SPM formula book from library desk*' },
+                { speaker: 'HAMMADY', text: 'Casio secured. SPM trials ready. Aura remains 100% dry and undefeated.' },
+                { speaker: 'HAMMADY', text: '...Truly, not as painful as Delson.' }
+            ], () => {
+                this.cameras.main.fadeOut(800, 0, 0, 0);
+                this.time.delayedCall(850, () => {
+                    this.scene.start('Victory');
+                });
             });
         });
     }
@@ -2233,28 +2801,46 @@ class VictoryScene extends Phaser.Scene {
 
         this.add.rectangle(cx, cy, GAME_W, GAME_H, 0x090912);
 
-        this.add.text(cx, cy - 110, '🎉 MISSION ACCOMPLISHED! 🎉', {
-            fontSize: '32px', fontFamily: 'monospace', color: '#f5c542',
+        this.add.text(cx, 40, '🎉 MISSION ACCOMPLISHED! 🎉', {
+            fontSize: '28px', fontFamily: 'monospace', color: '#f5c542',
             fontStyle: 'bold', stroke: '#000', strokeThickness: 5
         }).setOrigin(0.5);
 
-        this.add.text(cx, cy - 35,
-            'Hammady successfully pacified his toxic yandere ex Hanis,\n' +
-            'protected his aura from the showers,\n' +
-            'and reclaimed his Casio fx-570 for SPM trials.\n\n' +
-            '"Not as painful as Delson."', {
-            fontSize: '15px', fontFamily: 'monospace', color: '#e0e0e0',
-            align: 'center', lineSpacing: 6
+        this.add.text(cx, 75, 'SM ALL SAINTS, KOTA KINABALU — SPM TRIALS SURVIVED', {
+            fontSize: '12px', fontFamily: 'monospace', color: '#4fc3f7',
+            fontStyle: 'bold'
         }).setOrigin(0.5);
 
-        this.add.text(cx, cy + 65, 'SM ALL SAINTS, KOTA KINABALU\nSPM TRIALS SURVIVED', {
-            fontSize: '13px', fontFamily: 'monospace', color: '#4fc3f7',
+        // Display Hammady holding Casio, with Delson the Jacked Knight standing proud
+        this.add.image(cx - 110, cy - 40, 'player_idle').setScale(1.75);
+        const calc = this.add.image(cx - 65, cy - 45, 'casio_fx570').setScale(1.5);
+        this.tweens.add({
+            targets: calc, y: cy - 50, duration: 600, yoyo: true, repeat: -1
+        });
+        this.add.image(cx + 95, cy - 55, 'delson_idle').setScale(1.35);
+
+        this.add.text(cx - 110, cy + 28, 'HAMMADY (FORM 5)\nCasio fx-570 Secured', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#ffffff',
+            align: 'center', fontStyle: 'bold'
+        }).setOrigin(0.5);
+
+        this.add.text(cx + 95, cy + 28, 'DELSON (JACKED KNIGHT)\n"I WAS ULTING!! WHY PULL?!"', {
+            fontSize: '10px', fontFamily: 'monospace', color: '#ffb74d',
+            align: 'center', fontStyle: 'bold'
+        }).setOrigin(0.5);
+
+        this.add.text(cx, cy + 115,
+            'Hammady preserved his aura from the showers,\n' +
+            'Lifeweaver-pulled Delson to hammer-shatter Hanis into orbit,\n' +
+            'and secured his Casio calculator for tomorrow\'s SPM trials.\n\n' +
+            '"Not as painful as Delson."', {
+            fontSize: '13px', fontFamily: 'monospace', color: '#dddddd',
             align: 'center', lineSpacing: 4
         }).setOrigin(0.5);
 
-        const replay = this.add.text(cx, cy + 140, '▶ PLAY AGAIN (TAP / ANY KEY) ◀', {
-            fontSize: '16px', fontFamily: 'monospace', color: '#ffffff',
-            backgroundColor: '#1b5e20', padding: { x: 12, y: 6 }
+        const replay = this.add.text(cx, cy + 205, '▶ PLAY AGAIN (TAP / ANY KEY) ◀', {
+            fontSize: '15px', fontFamily: 'monospace', color: '#ffffff',
+            backgroundColor: '#1b5e20', padding: { x: 14, y: 7 }
         }).setOrigin(0.5);
 
         this.tweens.add({
@@ -2278,6 +2864,9 @@ const config = {
     height: GAME_H,
     parent: 'game-container',
     pixelArt: true,
+    input: {
+        activePointers: 3
+    },
     physics: {
         default: 'arcade',
         arcade: {
